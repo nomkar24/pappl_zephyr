@@ -1,0 +1,5 @@
+name: pappl
+build:
+  cmake: .
+  depends:
+    - libcups
