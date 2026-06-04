@@ -1,0 +1,11 @@
+config PAPPL
+    bool "PAPPL support"
+    default n
+    help
+      Enable PAPPL printing framework support
+
+config PAPPL_JOB_STACK_SIZE
+    int "PAPPL Job Thread Stack Size"
+    default 8192
+    help
+      Stack size for PAPPL job processing threads
