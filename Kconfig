@@ -1,5 +1,0 @@
-config PAPPL
-	bool "Enable PAPPL"
-	select MBEDTLS
-	help
-	  This option enables PAPPL as a Zephyr module.
