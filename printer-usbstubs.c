@@ -26,3 +26,23 @@ _papplPrinterRunUSB(pappl_printer_t *printer)
 
   return (NULL);
 }
+
+
+void
+papplPrinterSetUSB(
+    pappl_printer_t  *printer,
+    unsigned         vendor_id,
+    unsigned         product_id,
+    pappl_uoptions_t options,
+    const char       *storagefile,
+    pappl_pr_usb_cb_t usb_cb,
+    void             *usb_data)
+{
+  (void)printer;
+  (void)vendor_id;
+  (void)product_id;
+  (void)options;
+  (void)storagefile;
+  (void)usb_cb;
+  (void)usb_data;
+}

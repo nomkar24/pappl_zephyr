@@ -1892,7 +1892,7 @@ papplPrinterSetPrintGroup(
   printer->print_group = value ? strdup(value) : NULL;
   printer->config_time = time(NULL);
 
-#if !_WIN32
+#if !_WIN32 && !defined(__ZEPHYR__)
   if (printer->print_group && strcmp(printer->print_group, "none"))
   {
     char		buffer[8192];	// Buffer for strings
@@ -1905,7 +1905,7 @@ papplPrinterSetPrintGroup(
       printer->print_gid = grp->gr_gid;
   }
   else
-#endif // !_WIN32
+#endif // !_WIN32 && !__ZEPHYR__
     printer->print_gid = (gid_t)-1;
 
   _papplRWUnlock(printer);

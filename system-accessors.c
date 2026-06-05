@@ -1680,7 +1680,7 @@ papplSystemSetAdminGroup(
     free(system->admin_group);
     system->admin_group = value ? strdup(value) : NULL;
 
-#if !_WIN32 // TODO: Implement Windows admin group support
+#if !_WIN32 && !defined(__ZEPHYR__) // TODO: Implement Windows admin group support
     if (system->admin_group && strcmp(system->admin_group, "none"))
     {
       char		buffer[8192];	// Buffer for strings
@@ -1693,7 +1693,7 @@ papplSystemSetAdminGroup(
 	system->admin_gid = grp->gr_gid;
     }
     else
-#endif // !_WIN32
+#endif // !_WIN32 && !__ZEPHYR__
       system->admin_gid = (gid_t)-1;
 
     _papplSystemConfigChanged(system);

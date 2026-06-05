@@ -530,5 +530,5 @@ static const char * const en_minimal_strings =
 "\"sides\" = \"2-Sided Printing\";\n"
 "\"sides.one-sided\" = \"Off\";\n"
 "\"sides.two-sided-long-edge\" = \"On (portrait)\";\n"
-"\"sides.two-sided-short-edge\" = \"On (landscape)\";\n"
+"\"sides.two-sided-short-edge\" = \"On (landscape)\";\n";
 

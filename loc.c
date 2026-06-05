@@ -185,7 +185,7 @@ _papplLocLoadAll(pappl_system_t *system)  // I - System
   _pappl_resource_t r;                    // Temporary resource data
   memset(&r, 0, sizeof(r));
   r.language = "en";
-  r.data     = (const void *)en_strings;
+  r.data     = (const void *)en_minimal_strings;
   _papplLocCreate(system, &r);
 }
 

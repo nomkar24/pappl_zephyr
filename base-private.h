@@ -80,3 +80,5 @@ typedef struct _pappl_link_s		// Web interface navigation link
 
 typedef struct _pappl_odevice_s _pappl_odevice_t;
 					// Output device
+
+#endif // !_PAPPL_BASE_PRIVATE_H_

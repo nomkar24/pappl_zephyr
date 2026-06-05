@@ -8,6 +8,9 @@
 #include <stddef.h>
 #include <stdio.h>
 #include <cups/cups.h>
+#include <cups/json.h>
+#include <cups/oauth.h>
+#include <poll.h>
 
 // Version numbers (matching PAPPL 2.0)
 #define PAPPL_VERSION "2.0.0"
@@ -30,8 +33,8 @@
 #define HAVE_STRLCAT 1
 
 // Zephyr supports statvfs via <zephyr/fs/fs.h>
-#define HAVE_STATVFS 1
-#define HAVE_SYS_STATVFS_H 1
+#undef HAVE_STATVFS
+#undef HAVE_SYS_STATVFS_H
 
 // Security/TLS (Using MbedTLS)
 #define HAVE_MBEDTLS 1
@@ -49,6 +52,22 @@
 
 // POSIX/CUPS Shims for Zephyr
 #define realpath(x, y) (y)
+typedef size_t cups_len_t;
+#ifndef W_OK
+#  define W_OK 2
+#endif
+#ifndef R_OK
+#  define R_OK 4
+#endif
+#ifndef O_NOFOLLOW
+#  define O_NOFOLLOW 0
+#endif
+#ifndef O_CLOEXEC
+#  define O_CLOEXEC 0
+#endif
+#ifndef O_BINARY
+#  define O_BINARY 0
+#endif
 
 static inline FILE *pappl_stub_popen(const char *c, const char *t) { return NULL; }
 #define popen pappl_stub_popen

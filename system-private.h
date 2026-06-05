@@ -12,20 +12,14 @@
 
 // Zephyr RTOS includes
 #include <zephyr/kernel.h>
-#include <zephyr/net/socket.h> // For struct pollfd and socket types
+#include <zephyr/net/socket.h> // For socket types
+#ifdef __zephyr__
+#  include <zephyr/posix/poll.h>
+#else
+#  include <poll.h>
+#endif
 #include <stdio.h>
 #include <sys/types.h>
-
-// Fallback definitions for standard Unix types that might be missing in Zephyr
-#ifndef GID_T_DEFINED
-typedef unsigned int gid_t;
-#define GID_T_DEFINED
-#endif
-
-#ifndef UID_T_DEFINED
-typedef unsigned int uid_t;
-#define UID_T_DEFINED
-#endif
 
 // Include CUPS and PAPPL core headers
 #include "subscription-private.h"

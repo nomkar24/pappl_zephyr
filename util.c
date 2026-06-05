@@ -163,7 +163,7 @@ filter_cb(_pappl_ipp_filter_t *filter,	// I - Filter parameters
 
   // Filter out attributes in the wrong group or the "media-col-database" attribute unless requested...
   if ((filter->group_tag != IPP_TAG_ZERO && group != filter->group_tag && group != IPP_TAG_ZERO) || !name || (!strcmp(name, "media-col-database") && !cupsArrayFind(filter->ra, (void *)name)))
-    return (CUPS_BOOL_FALSE);
+    return (CUPS_FALSE);
 
   // Otherwise filter attributes by name...
   return (!filter->ra || cupsArrayFind(filter->ra, (void *)name) != NULL);

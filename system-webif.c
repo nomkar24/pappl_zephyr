@@ -11,7 +11,9 @@
 #include "pappl-private.h"
 #if !_WIN32
 #  include <net/if.h>
-#  include <ifaddrs.h>
+#  if !defined(__ZEPHYR__)
+#    include <ifaddrs.h>
+#  endif
 #endif // !_WIN32
 
 
@@ -1394,7 +1396,7 @@ _papplSystemWebSecurity(
 	}
       }
     }
-#if !_WIN32
+#if !_WIN32 && !defined(__ZEPHYR__)
     else
     {
       const char	*group;		// Current group
@@ -1427,7 +1429,7 @@ _papplSystemWebSecurity(
       if (!status)
         status = _PAPPL_LOC("Group changes saved.");
     }
-#endif // !_WIN32
+#endif // !_WIN32 && !__ZEPHYR__
 
     cupsFreeOptions((cups_len_t)num_form, form);
   }
@@ -1442,7 +1444,7 @@ _papplSystemWebSecurity(
                       "      </div>\n"
                       "      <div class=\"row\">\n");
 
-#if !_WIN32
+#if !_WIN32 && !defined(__ZEPHYR__)
   if (system->auth_service)
   {
     // Show Users pane for group controls
@@ -1482,7 +1484,7 @@ _papplSystemWebSecurity(
 			  "        </form>\n", papplClientGetLocString(client, _PAPPL_LOC("Save Changes")));
   }
   else
-#endif // !_WIN32
+#endif // !_WIN32 && !__ZEPHYR__
   if (system->password_hash[0])
   {
     // Show simple access password update form...
@@ -1980,8 +1982,8 @@ get_networks(
     size_t          max_networks,	// I - Maximum number of networks
     pappl_network_t *networks)		// I - Networks
 {
-#if _WIN32
-  // TODO: Implement network interface lookups for Windows...
+#if _WIN32 || defined(__ZEPHYR__)
+  // TODO: Implement network interface lookups for Windows/Zephyr...
   return (0);
 
 #else

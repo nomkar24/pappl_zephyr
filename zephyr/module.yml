@@ -1,6 +1,6 @@
 name: pappl_zephyr
 build:
   cmake: .
-  kconfig: Kconfig
+  kconfig: zephyr/Kconfig
   depends:
     - libcups

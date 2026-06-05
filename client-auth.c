@@ -7,10 +7,10 @@ static int pappl_authenticate_user(pappl_client_t *client, const char *username,
   char hash[256];
 
   // PAPPL has a built-in password hash tool
-  papplSystemHashPassword(client->system, client->system->password, password, hash, sizeof(hash));
+  papplSystemHashPassword(client->system, client->system->password_hash, password, hash, sizeof(hash));
 
   // Compare computed hash with stored hash
-  return (strcmp(hash, client->system->password) == 0);
+  return (strcmp(hash, client->system->password_hash) == 0);
 }
 
 http_status_t papplClientIsAuthorized(pappl_client_t *client)
@@ -23,12 +23,12 @@ http_status_t _papplClientIsAuthorizedForGroup(
     pappl_client_t *client,
     bool           allow_remote,
     const char     *group,
-    gid_t          groupid)
+    unsigned int   groupid)
 {
   const char *authorization;
 
   // 1. If no system password/auth callback is set, allow access
-  if (!client->system->password[0] && !client->system->auth_cb)
+  if (!client->system->password_hash[0] && !client->system->auth_cb)
     return (HTTP_STATUS_CONTINUE);
 
   // 2. If custom callback is registered, delegate
