@@ -283,6 +283,7 @@ _papplSystemMakeUUID(
 void
 papplSystemRun(pappl_system_t *system)	// I - System
 {
+  printk("[pappl] papplSystemRun starting...\n");
   size_t		i,		// Looping var
 			count;		// Number of listeners that fired
   int			pcount,		// Poll count
@@ -510,29 +511,42 @@ papplSystemRun(pappl_system_t *system)	// I - System
 
     if (pcount > 0)
     {
+      printk("[pappl] poll returned pcount=%d\n", pcount);
       time(&idletime);
 
       for (i = 0; i < (size_t)system->num_listeners; i ++)
       {
-	if (system->listeners[i].revents & POLLIN)
-	{
-	  if ((client = _papplClientCreate(system, (int)system->listeners[i].fd)) != NULL)
-	  {
-	    cupsMutexLock(&system->clients_mutex);
-	    system->num_clients ++;
-	    cupsMutexUnlock(&system->clients_mutex);
+        if (system->listeners[i].revents & POLLIN)
+        {
+          printk("[pappl] Listener index %d (fd=%d) has POLLIN event (revents=0x%x)\n", (int)i, system->listeners[i].fd, system->listeners[i].revents);
+          if ((client = _papplClientCreate(system, (int)system->listeners[i].fd)) != NULL)
+          {
+            printk("[pappl] Client created successfully: client=%p, hostname=%s\n", (void *)client, client->hostname);
+            cupsMutexLock(&system->clients_mutex);
+            system->num_clients ++;
+            cupsMutexUnlock(&system->clients_mutex);
 
-	    if ((client->thread_id = cupsThreadCreate((void *(*)(void *))_papplClientRun, client)) == CUPS_THREAD_INVALID)
-	    {
-	      papplLog(system, PAPPL_LOGLEVEL_ERROR, "Unable to create client thread: %s", strerror(errno));
-	      _papplClientDelete(client);
-	    }
-	    else
-	    {
-	      cupsThreadDetach(client->thread_id);
-	    }
-	  }
-	}
+            if ((client->thread_id = cupsThreadCreate((void *(*)(void *))_papplClientRun, client)) == CUPS_THREAD_INVALID)
+            {
+              printk("[pappl] Failed to create client thread for client=%p\n", (void *)client);
+              papplLog(system, PAPPL_LOGLEVEL_ERROR, "Unable to create client thread: %s", strerror(errno));
+              _papplClientDelete(client);
+            }
+            else
+            {
+              printk("[pappl] Client thread created successfully: thread_id=%p\n", (void *)client->thread_id);
+              cupsThreadDetach(client->thread_id);
+            }
+          }
+          else
+          {
+            printk("[pappl] Failed to create client connection from fd=%d\n", system->listeners[i].fd);
+          }
+        }
+        else if (system->listeners[i].revents != 0)
+        {
+          printk("[pappl] Listener index %d (fd=%d) has other event (revents=0x%x)\n", (int)i, system->listeners[i].fd, system->listeners[i].revents);
+        }
       }
 
       cupsMutexLock(&system->clients_mutex);

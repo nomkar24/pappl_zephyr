@@ -48,7 +48,7 @@
 #undef HAVE_LIBPNG
 #undef HAVE_LIBUSB
 #undef HAVE_LIBPAM
-#undef HAVE_PDFIO
+#define HAVE_PDFIO 1
 
 // POSIX/CUPS Shims for Zephyr
 #define realpath(x, y) (y)

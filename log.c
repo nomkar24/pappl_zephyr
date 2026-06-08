@@ -374,7 +374,7 @@ _papplLogOpenNoLock(
     // Log to syslog...
     system->log_fd = -1;
   }
-  else if (!strcmp(system->log_file, "-"))
+  else if (!system->log_file || !strcmp(system->log_file, "-"))
   {
     // Log to stderr...
     system->log_fd = 2;
@@ -490,6 +490,9 @@ rotate_log_no_lock(
 
 
   // Re-check whether we need to rotate the log file...
+  if (!system->log_file || !strcmp(system->log_file, "-"))
+    return;
+
   if (!fstat(system->log_fd, &loginfo) && loginfo.st_size >= (off_t)system->log_max_size)
   {
     // Rename existing log file to "xxx.O"

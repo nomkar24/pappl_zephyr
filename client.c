@@ -6,6 +6,7 @@
 #include <unistd.h>
 #include <errno.h>
 #include <string.h>
+#include <zephyr/kernel.h>
 
 
 
@@ -53,6 +54,8 @@ _papplClientCreate(
   pappl_client_t	*client;	// Client
 
 
+  printk("[pappl] _papplClientCreate: sock=%d\n", sock);
+
   if ((client = calloc(1, sizeof(pappl_client_t))) == NULL)
   {
     papplLog(system, PAPPL_LOGLEVEL_ERROR, "Unable to allocate memory for client connection: %s", strerror(errno));
@@ -68,6 +71,7 @@ _papplClientCreate(
   // Accept the client and get the remote address...
   if ((client->http = httpAcceptConnection(sock, 1)) == NULL)
   {
+    printk("[pappl] _papplClientCreate: httpAcceptConnection failed: %s\n", strerror(errno));
     papplLog(system, PAPPL_LOGLEVEL_ERROR, "Unable to accept client connection: %s", strerror(errno));
     free(client);
     return (NULL);
@@ -75,6 +79,7 @@ _papplClientCreate(
 
   httpGetHostname(client->http, client->hostname, sizeof(client->hostname));
 
+  printk("[pappl] _papplClientCreate: accepted connection from '%s'\n", client->hostname);
   papplLogClient(client, PAPPL_LOGLEVEL_INFO, "Accepted connection from '%s'.", client->hostname);
 
   return (client);
@@ -644,9 +649,20 @@ _papplClientRun(
   int first_time = 1;			// First time request?
 
 
+  printk("[pappl] _papplClientRun: starting client thread for client=%p (number=%d)\n", (void *)client, client->number);
+
   // Loop until we are out of requests or timeout (30 seconds)...
-  while (httpWait(client->http, 30000))
+  for (;;)
   {
+    printk("[pappl] _papplClientRun: waiting for requests on client=%p (timeout 30s)\n", (void *)client);
+    if (!httpWait(client->http, 30000))
+    {
+      printk("[pappl] _papplClientRun: httpWait returned false (timeout/disconnect), exiting loop\n");
+      break;
+    }
+
+    printk("[pappl] _papplClientRun: httpWait returned true (request data available), first_time=%d\n", first_time);
+
     if (first_time && !(client->system->options & PAPPL_SOPTIONS_NO_TLS))
     {
       // See if we need to negotiate a TLS connection...
@@ -675,13 +691,19 @@ _papplClientRun(
       first_time = 0;
     }
 
+    printk("[pappl] _papplClientRun: calling _papplClientProcessHTTP\n");
     if (!_papplClientProcessHTTP(client))
+    {
+      printk("[pappl] _papplClientRun: _papplClientProcessHTTP returned false, exiting loop\n");
       break;
+    }
+    printk("[pappl] _papplClientRun: _papplClientProcessHTTP returned true, cleaning temp files\n");
 
     _papplClientCleanTempFiles(client);
   }
 
   // Close the connection to the client and return...
+  printk("[pappl] _papplClientRun: exiting thread, deleting client=%p\n", (void *)client);
   _papplClientDelete(client);
 
   return (NULL);
