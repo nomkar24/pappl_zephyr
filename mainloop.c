@@ -25,6 +25,8 @@
 //
 
 #include "mainloop.h"
+#include "printer.h"
+#include "job.h"
 #include <zephyr/kernel.h>
 #include <zephyr/shell/shell.h>
 
@@ -199,14 +201,12 @@ static int cmd_pappl_shutdown(const struct shell *sh, size_t argc,
 //
 
 // Callback used by papplSystemIteratePrinters to print each printer
-static bool shell_list_printer_cb(pappl_printer_t *printer, void *data) {
+static void shell_list_printer_cb(pappl_printer_t *printer, void *data) {
   const struct shell *sh = (const struct shell *)data;
 
   shell_print(sh, "  [%d] %s  (state: %s)", papplPrinterGetID(printer),
               papplPrinterGetName(printer),
               papplPrinterGetStateString(printer));
-
-  return (true); // continue iterating
 }
 
 static int cmd_pappl_printers(const struct shell *sh, size_t argc,
@@ -232,23 +232,19 @@ static int cmd_pappl_printers(const struct shell *sh, size_t argc,
 //
 
 // Callback used by papplPrinterIterateAllJobs to print each job
-static bool shell_list_job_cb(pappl_job_t *job, void *data) {
+static void shell_list_job_cb(pappl_job_t *job, void *data) {
   const struct shell *sh = (const struct shell *)data;
 
   shell_print(sh, "  Job #%d: \"%s\"  (state: %s)", papplJobGetID(job),
               papplJobGetName(job), papplJobGetStateString(job));
-
-  return (true); // continue iterating
 }
 
 // Printer iterator to iterate jobs across all printers
-static bool shell_jobs_per_printer_cb(pappl_printer_t *printer, void *data) {
+static void shell_jobs_per_printer_cb(pappl_printer_t *printer, void *data) {
   const struct shell *sh = (const struct shell *)data;
 
   shell_print(sh, "Printer: %s", papplPrinterGetName(printer));
-  papplPrinterIterateAllJobs(printer, shell_list_job_cb, (void *)sh);
-
-  return (true);
+  papplPrinterIterateAllJobs(printer, shell_list_job_cb, (void *)sh, 1, 0);
 }
 
 static int cmd_pappl_jobs(const struct shell *sh, size_t argc, char **argv) {
@@ -288,7 +284,7 @@ static bool shell_device_list_cb(const char *device_info,
 }
 
 // Device error callback
-static void shell_device_error_cb(const char *message, void *data) {
+static void shell_device_error_cb(void *data, const char *message) {
   const struct shell *sh = (const struct shell *)data;
   shell_error(sh, "Device error: %s", message);
 }
@@ -304,6 +300,28 @@ static int cmd_pappl_devices(const struct shell *sh, size_t argc, char **argv) {
                   shell_device_error_cb, (void *)sh);
 
   return (0);
+}
+
+//
+// Helper structure to find a printer by its friendly name
+struct find_printer_data {
+  const char *name;
+  pappl_printer_t *printer;
+};
+
+// Callback to compare printer names
+static void find_printer_cb(pappl_printer_t *printer, void *data) {
+  struct find_printer_data *find_data = (struct find_printer_data *)data;
+  if (strcmp(papplPrinterGetName(printer), find_data->name) == 0) {
+    find_data->printer = printer;
+  }
+}
+
+// Find a printer by its name inside the system
+static pappl_printer_t *find_printer_by_name(pappl_system_t *system, const char *name) {
+  struct find_printer_data find_data = {name, NULL};
+  papplSystemIteratePrinters(system, find_printer_cb, &find_data);
+  return (find_data.printer);
 }
 
 //
@@ -325,7 +343,7 @@ static int cmd_pappl_pause(const struct shell *sh, size_t argc, char **argv) {
     return (-ENOENT);
   }
 
-  printer = papplSystemFindPrinter(current_system, NULL, 0, argv[1]);
+  printer = find_printer_by_name(current_system, argv[1]);
   if (!printer) {
     shell_error(sh, "Printer '%s' not found.", argv[1]);
     return (-ENOENT);
@@ -356,7 +374,7 @@ static int cmd_pappl_resume(const struct shell *sh, size_t argc, char **argv) {
     return (-ENOENT);
   }
 
-  printer = papplSystemFindPrinter(current_system, NULL, 0, argv[1]);
+  printer = find_printer_by_name(current_system, argv[1]);
   if (!printer) {
     shell_error(sh, "Printer '%s' not found.", argv[1]);
     return (-ENOENT);
@@ -387,7 +405,7 @@ static int cmd_pappl_set_device(const struct shell *sh, size_t argc, char **argv
     return (-ENOENT);
   }
 
-  printer = papplSystemFindPrinter(current_system, NULL, 0, argv[1]);
+  printer = find_printer_by_name(current_system, argv[1]);
   if (!printer) {
     shell_error(sh, "Printer '%s' not found.", argv[1]);
     return (-ENOENT);

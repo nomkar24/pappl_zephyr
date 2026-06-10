@@ -74,13 +74,16 @@ skip_name(const uint8_t *reader, const uint8_t *packet_end)
 
 // Helper to get the first label of a DNS name (for instance name)
 static const uint8_t *
-get_first_label(
+get_first_label_rec(
     const uint8_t *reader,
     const uint8_t *packet_start,
     const uint8_t *packet_end,
     char          *buf,
-    size_t        bufsize)
+    size_t        bufsize,
+    int           depth)
 {
+  if (depth > 5)
+    return (NULL);
   if (reader >= packet_end)
     return (NULL);
 
@@ -93,7 +96,7 @@ get_first_label(
     const uint8_t *ptr = packet_start + offset;
     if (ptr >= packet_end)
       return (NULL);
-    get_first_label(ptr, packet_start, packet_end, buf, bufsize);
+    get_first_label_rec(ptr, packet_start, packet_end, buf, bufsize, depth + 1);
     return (reader + 2);
   }
   else if (len > 0)
@@ -106,6 +109,17 @@ get_first_label(
     return (skip_name(reader, packet_end));
   }
   return (NULL);
+}
+
+static const uint8_t *
+get_first_label(
+    const uint8_t *reader,
+    const uint8_t *packet_start,
+    const uint8_t *packet_end,
+    char          *buf,
+    size_t        bufsize)
+{
+  return get_first_label_rec(reader, packet_start, packet_end, buf, bufsize, 0);
 }
 
 // Helper to parse incoming mDNS response packet. Returns true if callback says to stop.
@@ -173,15 +187,19 @@ parse_dns_response(
 
       // Match service type from record name
       const uint8_t *temp = record_name_ptr;
-      while (temp < packet_end)
+      int hops = 0;
+      while (temp < packet_end && hops < 10)
       {
         uint8_t len = *temp;
         if (len == 0)
           break;
         if ((len & 0xC0) == 0xC0)
         {
+          if (temp + 2 > packet_end)
+            break;
           uint16_t offset = ((len & 0x3F) << 8) | temp[1];
           temp = packet + offset;
+          hops++;
           continue;
         }
         if (len == 15 && memcmp(temp + 1, "_pdl-datastream", 15) == 0)
@@ -289,29 +307,20 @@ pappl_socket_list(
   if (setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &opt, sizeof(opt)) < 0)
     printk("pappl_socket_list: setsockopt(SO_REUSEPORT) failed (errno=%d)\n", errno);
 
-  // Bind to port 5353 (mDNS port) to receive all responses
+  // Bind to a random port to avoid port-sharing conflicts with native mDNS responder
   struct sockaddr_in local_addr;
   memset(&local_addr, 0, sizeof(local_addr));
   local_addr.sin_family = AF_INET;
-  local_addr.sin_port = htons(5353);
+  local_addr.sin_port = htons(0);
   local_addr.sin_addr.s_addr = htonl(INADDR_ANY);
 
   if (bind(fd, (struct sockaddr *)&local_addr, sizeof(local_addr)) < 0)
   {
-    printk("pappl_socket_list: bind to 5353 failed (errno=%d), falling back to random port...\n", errno);
-    local_addr.sin_port = htons(0);
-    if (bind(fd, (struct sockaddr *)&local_addr, sizeof(local_addr)) < 0)
-    {
-      printk("pappl_socket_list: bind to random port failed (errno=%d)\n", errno);
-      close(fd);
-      free(buffer);
-      return (false);
-    }
+    printk("pappl_socket_list: bind to random port failed (errno=%d)\n", errno);
+    close(fd);
+    free(buffer);
+    return (false);
   }
-
-  // Join the mDNS multicast group to enable receiving multicast responses on Zephyr Wi-Fi
-  struct ip_mreq mreq;
-  mreq.imr_multiaddr.s_addr = inet_addr("224.0.0.251");
 
   struct net_if *iface = net_if_get_default();
   struct in_addr local_ip;
@@ -333,26 +342,18 @@ pappl_socket_list(
 
   if (has_ip)
   {
-    mreq.imr_interface.s_addr = local_ip.s_addr;
     char ip_str[32];
     inet_ntop(AF_INET, &local_ip, ip_str, sizeof(ip_str));
-    printk("pappl_socket_list: joining multicast group 224.0.0.251 on active IP %s...\n", ip_str);
+    printk("pappl_socket_list: sending queries on active IP %s...\n", ip_str);
 
     // Route outgoing multicast packets on the same active interface
-    if (setsockopt(fd, IPPROTO_IP, IP_MULTICAST_IF, &local_ip, sizeof(local_ip)) < 0)
+    struct ip_mreq mreq_if;
+    memset(&mreq_if, 0, sizeof(mreq_if));
+    mreq_if.imr_interface = local_ip;
+    if (setsockopt(fd, IPPROTO_IP, IP_MULTICAST_IF, &mreq_if, sizeof(mreq_if)) < 0)
     {
       printk("pappl_socket_list: setsockopt(IP_MULTICAST_IF) failed (errno=%d)\n", errno);
     }
-  }
-  else
-  {
-    mreq.imr_interface.s_addr = htonl(INADDR_ANY);
-    printk("pappl_socket_list: warning no active IP found, falling back to INADDR_ANY for join\n");
-  }
-
-  if (setsockopt(fd, IPPROTO_IP, IP_ADD_MEMBERSHIP, &mreq, sizeof(mreq)) < 0)
-  {
-    printk("pappl_socket_list: warning IP_ADD_MEMBERSHIP failed (errno=%d)\n", errno);
   }
 
   // Target mDNS multicast IPv4 endpoint
