@@ -434,6 +434,7 @@ extern pappl_job_t	*papplPrinterFindJob(pappl_printer_t *printer, int job_id) _P
 extern pappl_contact_t	*papplPrinterGetContact(pappl_printer_t *printer, pappl_contact_t *contact) _PAPPL_PUBLIC;
 extern const char	*papplPrinterGetDeviceID(pappl_printer_t *printer) _PAPPL_PUBLIC;
 extern const char	*papplPrinterGetDeviceURI(pappl_printer_t *printer) _PAPPL_PUBLIC;
+extern void		papplPrinterSetDeviceURI(pappl_printer_t *printer, const char *device_uri) _PAPPL_PUBLIC;
 extern char		*papplPrinterGetDNSSDName(pappl_printer_t *printer, char *buffer, size_t bufsize) _PAPPL_PUBLIC;
 extern ipp_t		*papplPrinterGetDriverAttributes(pappl_printer_t *printer) _PAPPL_PUBLIC;
 extern pappl_pr_driver_data_t *papplPrinterGetDriverData(pappl_printer_t *printer, pappl_pr_driver_data_t *data) _PAPPL_PUBLIC;

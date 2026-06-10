@@ -1149,3 +1149,32 @@ free_odevice(_pappl_odevice_t *d)	// I - Output device
   free(d->pending_message);
   free(d);
 }
+
+
+//
+// 'papplPrinterSetDeviceURI()' - Set the device URI of a printer.
+//
+
+void
+papplPrinterSetDeviceURI(
+    pappl_printer_t *printer,		// I - Printer
+    const char      *device_uri)	// I - Device URI
+{
+  if (!printer)
+    return;
+
+  _papplRWLockWrite(printer);
+
+  free(printer->device_uri);
+  printer->device_uri = device_uri ? strdup(device_uri) : NULL;
+
+  ipp_attribute_t *attr = ippFindAttribute(printer->attrs, "smi55357-device-uri", IPP_TAG_URI);
+  if (attr)
+    ippSetString(printer->attrs, &attr, 0, printer->device_uri);
+  else
+    ippAddString(printer->attrs, IPP_TAG_PRINTER, IPP_TAG_URI, "smi55357-device-uri", NULL, printer->device_uri);
+
+  _papplRWUnlock(printer);
+
+  _papplSystemConfigChanged(printer->system);
+}

@@ -368,6 +368,37 @@ static int cmd_pappl_resume(const struct shell *sh, size_t argc, char **argv) {
   return (0);
 }
 
+//
+// 'cmd_pappl_set_device()' - Set the device URI of a named printer.
+//
+// Shell usage:  pappl setdevice <printer-name> <device-uri>
+//
+
+static int cmd_pappl_set_device(const struct shell *sh, size_t argc, char **argv) {
+  pappl_printer_t *printer;
+
+  if (argc < 3) {
+    shell_error(sh, "Usage: pappl setdevice <printer-name> <device-uri>");
+    return (-EINVAL);
+  }
+
+  if (!current_system) {
+    shell_error(sh, "PAPPL system is not running.");
+    return (-ENOENT);
+  }
+
+  printer = papplSystemFindPrinter(current_system, NULL, 0, argv[1]);
+  if (!printer) {
+    shell_error(sh, "Printer '%s' not found.", argv[1]);
+    return (-ENOENT);
+  }
+
+  papplPrinterSetDeviceURI(printer, argv[2]);
+  shell_print(sh, "Printer '%s' device URI set to '%s'.", argv[1], argv[2]);
+
+  return (0);
+}
+
 SHELL_STATIC_SUBCMD_SET_CREATE(
     pappl_cmds,
     SHELL_CMD(status, NULL, "Show PAPPL system name and running state",
@@ -383,6 +414,8 @@ SHELL_STATIC_SUBCMD_SET_CREATE(
               cmd_pappl_pause),
     SHELL_CMD(resume, NULL, "Resume a printer: pappl resume <name>",
               cmd_pappl_resume),
+    SHELL_CMD(setdevice, NULL, "Set printer device URI: pappl setdevice <name> <uri>",
+              cmd_pappl_set_device),
     SHELL_SUBCMD_SET_END);
 
 SHELL_CMD_REGISTER(pappl, &pappl_cmds, "PAPPL printer system commands", NULL);
