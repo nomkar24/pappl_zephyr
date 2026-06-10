@@ -87,7 +87,6 @@ papplSystemCreate(
 {
   pappl_system_t	*system;	// System object
 
-  (void)spooldir;
   (void)logfile;
   (void)auth_service;
 
@@ -116,7 +115,7 @@ papplSystemCreate(
   system->name              = strdup(name);
   system->dns_sd_name       = strdup(name);
   system->port              = port;
-  system->directory         = NULL; // No spool directory on Zephyr
+  system->directory         = spooldir ? strdup(spooldir) : NULL;
   system->log_fd            = -1;
   system->log_file          = NULL; // Logs go to console
   system->log_level         = loglevel;
