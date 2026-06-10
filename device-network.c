@@ -11,6 +11,7 @@
 #include "device-private.h"
 #include "printer-private.h"
 #include <cups/transcode.h>
+#include <zephyr/net/net_if.h>
 
 #define _PAPPL_MAX_SNMP_SUPPLY	32
 
@@ -49,6 +50,404 @@ static size_t		pappl_socket_supplies(pappl_device_t *device, size_t max_supplies
 static ssize_t		pappl_socket_write(pappl_device_t *device, const void *buffer, size_t bytes);
 
 
+// Helper to skip a DNS name in a packet
+static const uint8_t *
+skip_name(const uint8_t *reader, const uint8_t *packet_end)
+{
+  while (reader < packet_end)
+  {
+    uint8_t len = *reader;
+    if (len == 0)
+    {
+      return (reader + 1);
+    }
+    if ((len & 0xC0) == 0xC0)
+    {
+      if (reader + 2 > packet_end)
+        return (NULL);
+      return (reader + 2);
+    }
+    reader += 1 + len;
+  }
+  return (NULL);
+}
+
+// Helper to get the first label of a DNS name (for instance name)
+static const uint8_t *
+get_first_label(
+    const uint8_t *reader,
+    const uint8_t *packet_start,
+    const uint8_t *packet_end,
+    char          *buf,
+    size_t        bufsize)
+{
+  if (reader >= packet_end)
+    return (NULL);
+
+  uint8_t len = *reader;
+  if ((len & 0xC0) == 0xC0)
+  {
+    if (reader + 2 > packet_end)
+      return (NULL);
+    uint16_t offset = ((len & 0x3F) << 8) | reader[1];
+    const uint8_t *ptr = packet_start + offset;
+    if (ptr >= packet_end)
+      return (NULL);
+    get_first_label(ptr, packet_start, packet_end, buf, bufsize);
+    return (reader + 2);
+  }
+  else if (len > 0)
+  {
+    if (reader + 1 + len > packet_end)
+      return (NULL);
+    size_t copy_len = len < (bufsize - 1) ? len : (bufsize - 1);
+    memcpy(buf, reader + 1, copy_len);
+    buf[copy_len] = '\0';
+    return (skip_name(reader, packet_end));
+  }
+  return (NULL);
+}
+
+// Helper to parse incoming mDNS response packet. Returns true if callback says to stop.
+static bool
+parse_dns_response(
+    const uint8_t            *packet,
+    size_t                   packet_len,
+    const struct sockaddr_in *sender_addr,
+    pappl_device_cb_t        cb,
+    void                     *data)
+{
+  if (packet_len < 12)
+    return (false);
+
+  uint16_t flags = (packet[2] << 8) | packet[3];
+  if (!(flags & 0x8000))
+    return (false); // Not a response
+
+  uint16_t q_count = (packet[4] << 8) | packet[5];
+  uint16_t ans_count = (packet[6] << 8) | packet[7];
+  uint16_t aut_count = (packet[8] << 8) | packet[9];
+  uint16_t add_count = (packet[10] << 8) | packet[11];
+
+  printk("parse_dns_response: flags=0x%04x, Q=%d, ANS=%d, AUTH=%d, ADD=%d\n", flags, q_count, ans_count, aut_count, add_count);
+
+  const uint8_t *reader = packet + 12;
+  const uint8_t *packet_end = packet + packet_len;
+
+  // Skip Question section
+  for (int i = 0; i < q_count; i++)
+  {
+    reader = skip_name(reader, packet_end);
+    if (!reader || reader + 4 > packet_end)
+      return (false);
+    reader += 4; // Skip QTYPE and QCLASS
+  }
+
+  // Parse Answer, Authority, and Additional sections
+  int total_records = ans_count + aut_count + add_count;
+  char printer_name[64] = "";
+  char printer_uri[128] = "";
+  bool found_ptr = false;
+  uint16_t port = 9100;
+  bool is_ipp = false;
+
+  for (int i = 0; i < total_records; i++)
+  {
+    const uint8_t *record_name_ptr = reader;
+    reader = skip_name(reader, packet_end);
+    if (!reader || reader + 10 > packet_end)
+      break;
+
+    uint16_t type = (reader[0] << 8) | reader[1];
+    uint16_t rdlength = (reader[8] << 8) | reader[9];
+    const uint8_t *rdata = reader + 10;
+
+    if (rdata + rdlength > packet_end)
+      break;
+
+    reader = rdata + rdlength;
+
+    if (type == 12) // PTR
+    {
+      get_first_label(rdata, packet, packet_end, printer_name, sizeof(printer_name));
+
+      // Match service type from record name
+      const uint8_t *temp = record_name_ptr;
+      while (temp < packet_end)
+      {
+        uint8_t len = *temp;
+        if (len == 0)
+          break;
+        if ((len & 0xC0) == 0xC0)
+        {
+          uint16_t offset = ((len & 0x3F) << 8) | temp[1];
+          temp = packet + offset;
+          continue;
+        }
+        if (len == 15 && memcmp(temp + 1, "_pdl-datastream", 15) == 0)
+        {
+          printk("parse_dns_response: found _pdl-datastream record, name='%s'\n", printer_name);
+          is_ipp = false;
+          found_ptr = true;
+          break;
+        }
+        if (len == 4 && memcmp(temp + 1, "_ipp", 4) == 0)
+        {
+          printk("parse_dns_response: found _ipp record, name='%s'\n", printer_name);
+          is_ipp = true;
+          port = 631;
+          found_ptr = true;
+          break;
+        }
+        temp += 1 + len;
+      }
+    }
+    else if (type == 33) // SRV
+    {
+      if (rdlength >= 6)
+      {
+        port = (rdata[4] << 8) | rdata[5];
+        printk("parse_dns_response: found SRV record, target port=%d\n", port);
+      }
+    }
+  }
+
+  if (found_ptr && printer_name[0] != '\0')
+  {
+    char ip_str[32];
+    inet_ntop(AF_INET, &sender_addr->sin_addr, ip_str, sizeof(ip_str));
+    if (is_ipp)
+      snprintf(printer_uri, sizeof(printer_uri), "ipp://%s:%d/ipp/print", ip_str, port);
+    else
+      snprintf(printer_uri, sizeof(printer_uri), "socket://%s:%d", ip_str, port);
+
+    printk("parse_dns_response: reporting discovered printer '%s' at URI '%s'\n", printer_name, printer_uri);
+
+    // cb returns false to continue, true to stop (as per std callback rules)
+    if (!(*cb)(printer_name, printer_uri, NULL, data))
+    {
+      printk("parse_dns_response: callback returned false (requesting stop)\n");
+      return (true); // Stop requested
+    }
+  }
+
+  return (false);
+}
+
+// Callback for socket scheme dynamic listing via mDNS
+static bool
+pappl_socket_list(
+    pappl_devtype_t     types,
+    pappl_device_cb_t   cb,
+    void                *data,
+    pappl_deverror_cb_t err_cb,
+    void                *err_data)
+{
+  (void)types;
+  (void)err_cb;
+  (void)err_data;
+
+  printk("pappl_socket_list: starting mDNS discovery scan...\n");
+
+  uint8_t *buffer = malloc(1024);
+  if (!buffer)
+  {
+    printk("pappl_socket_list: failed to allocate 1024 bytes buffer\n");
+    return (false);
+  }
+
+  // Prepare standard mDNS unicast-response (QU bit set) query packets
+  static const uint8_t socket_query[] = {
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    15, '_', 'p', 'd', 'l', '-', 'd', 'a', 't', 'a', 's', 't', 'r', 'e', 'a', 'm',
+    4, '_', 't', 'c', 'p',
+    5, 'l', 'o', 'c', 'a', 'l',
+    0,
+    0x00, 0x0c, 0x80, 0x01
+  };
+
+  static const uint8_t ipp_query[] = {
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    4, '_', 'i', 'p', 'p',
+    4, '_', 't', 'c', 'p',
+    5, 'l', 'o', 'c', 'a', 'l',
+    0,
+    0x00, 0x0c, 0x80, 0x01
+  };
+
+  int fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+  if (fd < 0)
+  {
+    printk("pappl_socket_list: failed to create UDP socket (errno=%d)\n", errno);
+    free(buffer);
+    return (false);
+  }
+
+  int opt = 1;
+  if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0)
+    printk("pappl_socket_list: setsockopt(SO_REUSEADDR) failed (errno=%d)\n", errno);
+  if (setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &opt, sizeof(opt)) < 0)
+    printk("pappl_socket_list: setsockopt(SO_REUSEPORT) failed (errno=%d)\n", errno);
+
+  // Bind to port 5353 (mDNS port) to receive all responses
+  struct sockaddr_in local_addr;
+  memset(&local_addr, 0, sizeof(local_addr));
+  local_addr.sin_family = AF_INET;
+  local_addr.sin_port = htons(5353);
+  local_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+
+  if (bind(fd, (struct sockaddr *)&local_addr, sizeof(local_addr)) < 0)
+  {
+    printk("pappl_socket_list: bind to 5353 failed (errno=%d), falling back to random port...\n", errno);
+    local_addr.sin_port = htons(0);
+    if (bind(fd, (struct sockaddr *)&local_addr, sizeof(local_addr)) < 0)
+    {
+      printk("pappl_socket_list: bind to random port failed (errno=%d)\n", errno);
+      close(fd);
+      free(buffer);
+      return (false);
+    }
+  }
+
+  // Join the mDNS multicast group to enable receiving multicast responses on Zephyr Wi-Fi
+  struct ip_mreq mreq;
+  mreq.imr_multiaddr.s_addr = inet_addr("224.0.0.251");
+
+  struct net_if *iface = net_if_get_default();
+  struct in_addr local_ip;
+  memset(&local_ip, 0, sizeof(local_ip));
+  bool has_ip = false;
+
+  if (iface && iface->config.ip.ipv4)
+  {
+    for (int i = 0; i < NET_IF_MAX_IPV4_ADDR; i++)
+    {
+      if (iface->config.ip.ipv4->unicast[i].ipv4.is_used)
+      {
+        local_ip = iface->config.ip.ipv4->unicast[i].ipv4.address.in_addr;
+        has_ip = true;
+        break;
+      }
+    }
+  }
+
+  if (has_ip)
+  {
+    mreq.imr_interface.s_addr = local_ip.s_addr;
+    char ip_str[32];
+    inet_ntop(AF_INET, &local_ip, ip_str, sizeof(ip_str));
+    printk("pappl_socket_list: joining multicast group 224.0.0.251 on active IP %s...\n", ip_str);
+
+    // Route outgoing multicast packets on the same active interface
+    if (setsockopt(fd, IPPROTO_IP, IP_MULTICAST_IF, &local_ip, sizeof(local_ip)) < 0)
+    {
+      printk("pappl_socket_list: setsockopt(IP_MULTICAST_IF) failed (errno=%d)\n", errno);
+    }
+  }
+  else
+  {
+    mreq.imr_interface.s_addr = htonl(INADDR_ANY);
+    printk("pappl_socket_list: warning no active IP found, falling back to INADDR_ANY for join\n");
+  }
+
+  if (setsockopt(fd, IPPROTO_IP, IP_ADD_MEMBERSHIP, &mreq, sizeof(mreq)) < 0)
+  {
+    printk("pappl_socket_list: warning IP_ADD_MEMBERSHIP failed (errno=%d)\n", errno);
+  }
+
+  // Target mDNS multicast IPv4 endpoint
+  struct sockaddr_in mcast_addr;
+  memset(&mcast_addr, 0, sizeof(mcast_addr));
+  mcast_addr.sin_family = AF_INET;
+  mcast_addr.sin_port = htons(5353);
+  mcast_addr.sin_addr.s_addr = inet_addr("224.0.0.251");
+
+  // Send queries
+  ssize_t s1 = sendto(fd, socket_query, sizeof(socket_query), 0, (struct sockaddr *)&mcast_addr, sizeof(mcast_addr));
+  ssize_t s2 = sendto(fd, ipp_query, sizeof(ipp_query), 0, (struct sockaddr *)&mcast_addr, sizeof(mcast_addr));
+  printk("pappl_socket_list: sent queries (socket_sent=%d, ipp_sent=%d)\n", (int)s1, (int)s2);
+
+  // Poll for responses with a 1500ms timeout
+  struct pollfd pfd;
+  pfd.fd = fd;
+  pfd.events = POLLIN;
+
+  int64_t start_time = k_uptime_get();
+  bool callback_stopped = false;
+
+#define MAX_DISCOVERED_IPS 32
+  uint32_t discovered_ips[MAX_DISCOVERED_IPS];
+  int num_discovered_ips = 0;
+
+  printk("pappl_socket_list: entering poll loop...\n");
+
+  while (k_uptime_get() - start_time < 1500 && !callback_stopped)
+  {
+    int64_t elapsed = k_uptime_get() - start_time;
+    int remaining = 1500 - (int)elapsed;
+    if (remaining <= 0)
+      break;
+
+    int r = poll(&pfd, 1, remaining);
+    if (r < 0)
+    {
+      printk("pappl_socket_list: poll failed (errno=%d)\n", errno);
+      break;
+    }
+    else if (r == 0)
+    {
+      // Timeout
+    }
+    else if (pfd.revents & POLLIN)
+    {
+      struct sockaddr_in sender_addr;
+      socklen_t sender_len = sizeof(sender_addr);
+      ssize_t len = recvfrom(fd, buffer, 1024, 0, (struct sockaddr *)&sender_addr, &sender_len);
+      if (len > 0)
+      {
+        char ip_str[32];
+        inet_ntop(AF_INET, &sender_addr.sin_addr, ip_str, sizeof(ip_str));
+        printk("pappl_socket_list: received %d bytes from %s:%d\n", (int)len, ip_str, ntohs(sender_addr.sin_port));
+
+        if (len > 12)
+        {
+          uint32_t ip_val = sender_addr.sin_addr.s_addr;
+          bool duplicate = false;
+          for (int k = 0; k < num_discovered_ips; k++)
+          {
+            if (discovered_ips[k] == ip_val)
+            {
+              duplicate = true;
+              break;
+            }
+          }
+
+          if (!duplicate)
+          {
+            if (parse_dns_response(buffer, len, &sender_addr, cb, data))
+            {
+              callback_stopped = true;
+              break;
+            }
+            if (num_discovered_ips < MAX_DISCOVERED_IPS)
+            {
+              discovered_ips[num_discovered_ips++] = ip_val;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  printk("pappl_socket_list: scan finished, discovered %d unique hosts. callback_stopped=%d\n", num_discovered_ips, callback_stopped);
+
+  close(fd);
+  free(buffer);
+
+  return (callback_stopped);
+}
+
+
 //
 // '_papplDeviceAddNetworkSchemesNoLock()' - Add all of the supported network schemes.
 //
@@ -56,7 +455,7 @@ static ssize_t		pappl_socket_write(pappl_device_t *device, const void *buffer, s
 void
 _papplDeviceAddNetworkSchemesNoLock(void)
 {
-  _papplDeviceAddSchemeNoLock("socket", PAPPL_DEVTYPE_SOCKET, NULL, pappl_socket_open, pappl_socket_close, pappl_socket_read, pappl_socket_write, pappl_socket_status, pappl_socket_supplies, pappl_socket_getid);
+  _papplDeviceAddSchemeNoLock("socket", PAPPL_DEVTYPE_SOCKET, pappl_socket_list, pappl_socket_open, pappl_socket_close, pappl_socket_read, pappl_socket_write, pappl_socket_status, pappl_socket_supplies, pappl_socket_getid);
 }
 
 
