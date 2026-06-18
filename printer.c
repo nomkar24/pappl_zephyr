@@ -1093,6 +1093,10 @@ create_printer(
     snprintf(path, sizeof(path), "%s/", printer->uriname);
     papplSystemAddResourceCallback(system, path, "text/html", (pappl_resource_cb_t)_papplPrinterWebHome, printer);
 
+    snprintf(path, sizeof(path), "%s/connect", printer->uriname);
+    papplSystemAddResourceCallback(system, path, "text/html", (pappl_resource_cb_t)_papplPrinterWebConnect, printer);
+    papplPrinterAddLink(printer, _PAPPL_LOC("Connect Printer"), path, PAPPL_LOPTIONS_STATUS);
+
     snprintf(path, sizeof(path), "%s/cancelall", printer->uriname);
     papplSystemAddResourceCallback(system, path, "text/html", (pappl_resource_cb_t)_papplPrinterWebCancelAllJobs, printer);
 

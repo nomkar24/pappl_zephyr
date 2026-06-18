@@ -2293,3 +2293,195 @@ time_string(pappl_client_t *client,	// I - Client
   // Return the formatted string...
   return (buffer);
 }
+
+
+//
+// Local types...
+//
+
+typedef struct _pappl_printer_dev_s
+{
+  pappl_client_t	*client;	// Client connection
+  const char		*device_uri;	// Current device URI
+} _pappl_printer_dev_t;
+
+
+//
+// 'printer_device_cb()' - Device callback for printer connection.
+//
+
+static bool
+printer_device_cb(
+    const char *device_info,		// I - Device description
+    const char *device_uri,		// I - Device URI
+    const char *device_id,		// I - IEEE-1284 device ID or `NULL`
+    void       *data)			// I - Callback data
+{
+  _pappl_printer_dev_t *devdata = (_pappl_printer_dev_t *)data;
+					// Device callback data
+
+  (void)device_id;
+
+  papplClientHTMLPrintf(devdata->client, "<option value=\"%s\"%s>%s (%s)</option>", device_uri, !strcmp(devdata->device_uri, device_uri) ? " selected" : "", device_info, device_uri);
+
+  return (true);
+}
+
+
+//
+// '_papplPrinterWebConnect()' - Show the printer connect page.
+//
+
+void
+_papplPrinterWebConnect(
+    pappl_client_t  *client,		// I - Client
+    pappl_printer_t *printer)		// I - Printer
+{
+  const char	*status = NULL;		// Status message, if any
+  char		device_uri[1024] = "",	// Device URI
+		hostname[256] = "",	// Hostname
+		hostvalue[256];		// Hostname[:port]
+  int		port = 0;		// Default port for Socket printing
+  _pappl_printer_dev_t devdata;		// Device callback data
+  static const char *hostname_pattern =	// IP address or hostname pattern
+		// Hostname per RFC 1123
+		"^((\\s*((?=.{1,255}$)[0-9A-Za-z](?:(?:[0-9A-Za-z]|\\b-){0,61}[0-9A-Za-z])?(?:\\.[0-9A-Za-z](?:(?:[0-9A-Za-z]|\\b-){0,61}[0-9A-Za-z])?)*\\.?)\\s*)"
+		"|"
+		// IPv4 address
+		"(\\s*((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?))\\s*)"
+		"|"
+		// IPv6 address
+		"(\\s*((([0-9A-Fa-f]{1,4}:){7}([0-9A-Fa-f]{1,4}|:))|(([0-9A-Fa-f]{1,4}:){6}(:[0-9A-Fa-f]{1,4}|((25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)(\\.(25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)){3})|:))|(([0-9A-Fa-f]{1,4}:){5}(((:[0-9A-Fa-f]{1,4}){1,2})|:((25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)(\\.(25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)){3})|:))|(([0-9A-Fa-f]{1,4}:){4}(((:[0-9A-Fa-f]{1,4}){1,3})|((:[0-9A-Fa-f]{1,4})?:((25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)(\\.(25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)){3}))|:))|(([0-9A-Fa-f]{1,4}:){3}(((:[0-9A-Fa-f]{1,4}){1,4})|((:[0-9A-Fa-f]{1,4}){0,2}:((25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)(\\.(25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)){3}))|:))|(([0-9A-Fa-f]{1,4}:){2}(((:[0-9A-Fa-f]{1,4}){1,5})|((:[0-9A-Fa-f]{1,4}){0,3}:((25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)(\\.(25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)){3}))|:))|(([0-9A-Fa-f]{1,4}:){1}(((:[0-9A-Fa-f]{1,4}){1,6})|((:[0-9A-Fa-f]{1,4}){0,4}:((25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)(\\.(25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)){3}))|:))|(:(((:[0-9A-Fa-f]{1,4}){1,7})|((:[0-9A-Fa-f]{1,4}){0,5}:((25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)(\\.(25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)){3}))|:)))(%.+)?\\s*)"
+		// Optional port number
+		")(|:[0-9]+)$";
+
+
+  if (!papplClientHTMLAuthorize(client))
+    return;
+
+  if (printer->device_uri)
+    cupsCopyString(device_uri, printer->device_uri, sizeof(device_uri));
+
+  if (client->operation == HTTP_STATE_POST)
+  {
+    const char		*value;		// Form value
+    size_t		num_form = 0;	// Number of form variable
+    cups_option_t	*form = NULL;	// Form variables
+
+    if ((num_form = papplClientGetForm(client, &form)) == 0)
+    {
+      status = _PAPPL_LOC("Invalid form data.");
+    }
+    else if (!papplClientIsValidForm(client, num_form, form))
+    {
+      status = _PAPPL_LOC("Invalid form submission.");
+    }
+    else
+    {
+      if ((value = cupsGetOption("device_uri", (cups_len_t)num_form, form)) != NULL)
+        cupsCopyString(device_uri, value, sizeof(device_uri));
+
+      if (!strcmp(device_uri, "socket"))
+      {
+        // Make URI using hostname
+        if ((value = cupsGetOption("hostname", (cups_len_t)num_form, form)) == NULL)
+        {
+          status        = _PAPPL_LOC("Please enter a hostname or IP address for the printer.");
+          device_uri[0] = '\0';
+	}
+	else
+	{
+	  // Break out the port number, if present...
+	  char *ptr;
+	  cupsCopyString(hostname, value, sizeof(hostname));
+	  if ((ptr = strrchr(hostname, ':')) != NULL && !strchr(ptr, ']'))
+	  {
+	    char *end;			// End of value
+
+	    *ptr++ = '\0';
+	    port   = (int)strtol(ptr, &end, 10);
+
+            if (errno == ERANGE || *end || port <= 0 || port > 65535)
+            {
+              status        = _PAPPL_LOC("Bad port number.");
+              device_uri[0] = '\0';
+            }
+	  }
+
+          if (!status)
+          {
+            // Then see if we can lookup the hostname or IP address
+            http_addrlist_t	*list;		// Address list
+            if ((list = httpAddrGetList(hostname, AF_UNSPEC, "9100")) == NULL)
+            {
+              status = _PAPPL_LOC("Unable to lookup address.");
+	    }
+	    else
+	    {
+	      httpAddrFreeList(list);
+	      httpAssembleURI(HTTP_URI_CODING_ALL, device_uri, sizeof(device_uri), "socket", NULL, hostname, port, "/");
+	    }
+	  }
+	}
+      }
+
+      if (!device_uri[0])
+      {
+        status = _PAPPL_LOC("Please select a device.");
+      }
+      else if (!status)
+      {
+        papplPrinterSetDeviceURI(printer, device_uri);
+
+	// Redirect the client to the printer's status page...
+	papplClientRespondRedirect(client, HTTP_STATUS_FOUND, "/");
+	cupsFreeOptions((cups_len_t)num_form, form);
+	return;
+      }
+    }
+
+    cupsFreeOptions((cups_len_t)num_form, form);
+  }
+
+  papplClientHTMLPrinterHeader(client, printer, _PAPPL_LOC("Connect Printer"), 0, NULL, NULL);
+
+  if (status)
+    papplClientHTMLPrintf(client, "          <div class=\"banner\">%s</div>\n", papplClientGetLocString(client, status));
+
+  papplClientHTMLStartForm(client, client->uri, false);
+
+  papplClientHTMLPrintf(client,
+			"          <table class=\"form\">\n"
+			"            <tbody>\n"
+			"              <tr><th><label for=\"device_uri\">%s:</label></th><td><select name=\"device_uri\" id=\"device_uri\"><option value=\"\">%s</option>", papplClientGetLocString(client, _PAPPL_LOC("Device")), papplClientGetLocString(client, _PAPPL_LOC("Select Device")));
+
+  devdata.client     = client;
+  devdata.device_uri = device_uri;
+
+  papplDeviceList(PAPPL_DEVTYPE_ALL, printer_device_cb, &devdata, papplLogDevice, printer->system);
+
+  if (port)
+    snprintf(hostvalue, sizeof(hostvalue), "%s:%d", hostname, port);
+  else
+    cupsCopyString(hostvalue, hostname, sizeof(hostvalue));
+
+  papplClientHTMLPrintf(client,
+			"<option value=\"socket\">%s</option></tr>\n"
+			"              <tr><th><label for=\"hostname\">%s:</label></th><td><input type=\"text\" name=\"hostname\" id=\"hostname\" placeholder=\"%s\" pattern=\"%s\" value=\"%s\" disabled=\"disabled\"></td></tr>\n"
+			"             <tr><th></th><td><input type=\"submit\" value=\"%s\"></td></tr>\n"
+			"            </tbody></table>\n"
+			"           </form>\n"
+			"          <script>document.forms['form']['device_uri'].onchange = function () {\n"
+			"  if (this.value == 'socket') {\n"
+			"    document.forms['form']['hostname'].disabled = false;\n"
+			"    document.forms['form']['hostname'].required = true;\n"
+			"  } else {\n"
+			"    document.forms['form']['hostname'].disabled = true;\n"
+			"    document.forms['form']['hostname'].required = false;\n"
+			"  }\n"
+			"}</script>\n"
+			"         </div>\n"
+			"       </div>\n", papplClientGetLocString(client, _PAPPL_LOC("Network Printer")), papplClientGetLocString(client, _PAPPL_LOC("Hostname/IP Address")), papplClientGetLocString(client, _PAPPL_LOC("IP address or hostname")), hostname_pattern, hostvalue, papplClientGetLocString(client, _PAPPL_LOC("Connect Printer")));
+
+  papplClientHTMLPrinterFooter(client);
+}

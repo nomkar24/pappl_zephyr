@@ -202,6 +202,7 @@ extern void		_papplPrinterWebConfigFinalize(pappl_printer_t *printer, size_t num
 extern void		_papplPrinterWebDefaults(pappl_client_t *client, pappl_printer_t *printer) _PAPPL_PRIVATE;
 extern void		_papplPrinterWebDelete(pappl_client_t *client, pappl_printer_t *printer) _PAPPL_PRIVATE;
 extern void		_papplPrinterWebHome(pappl_client_t *client, pappl_printer_t *printer) _PAPPL_PRIVATE;
+extern void		_papplPrinterWebConnect(pappl_client_t *client, pappl_printer_t *printer) _PAPPL_PRIVATE;
 extern void		_papplPrinterWebInfra(pappl_client_t *client, pappl_printer_t *printer) _PAPPL_PRIVATE;
 extern void		_papplPrinterWebIteratorCallback(pappl_printer_t *printer, pappl_client_t *client) _PAPPL_PRIVATE;
 extern void		_papplPrinterWebJobs(pappl_client_t *client, pappl_printer_t *printer) _PAPPL_PRIVATE;

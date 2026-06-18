@@ -54,7 +54,8 @@ _papplClientCreate(
   pappl_client_t	*client;	// Client
 
 
-  printk("[pappl] _papplClientCreate: sock=%d\n", sock);
+  printf("[pappl] _papplClientCreate: sock=%d\n", sock);
+  fflush(stdout);
 
   if ((client = calloc(1, sizeof(pappl_client_t))) == NULL)
   {
@@ -71,7 +72,8 @@ _papplClientCreate(
   // Accept the client and get the remote address...
   if ((client->http = httpAcceptConnection(sock, 1)) == NULL)
   {
-    printk("[pappl] _papplClientCreate: httpAcceptConnection failed: %s\n", strerror(errno));
+    printf("[pappl] _papplClientCreate: httpAcceptConnection failed: %s\n", strerror(errno));
+    fflush(stdout);
     papplLog(system, PAPPL_LOGLEVEL_ERROR, "Unable to accept client connection: %s", strerror(errno));
     free(client);
     return (NULL);
@@ -79,7 +81,8 @@ _papplClientCreate(
 
   httpGetHostname(client->http, client->hostname, sizeof(client->hostname));
 
-  printk("[pappl] _papplClientCreate: accepted connection from '%s'\n", client->hostname);
+  printf("[pappl] _papplClientCreate: accepted connection from '%s'\n", client->hostname);
+  fflush(stdout);
   papplLogClient(client, PAPPL_LOGLEVEL_INFO, "Accepted connection from '%s'.", client->hostname);
 
   return (client);
@@ -649,19 +652,23 @@ _papplClientRun(
   int first_time = 1;			// First time request?
 
 
-  printk("[pappl] _papplClientRun: starting client thread for client=%p (number=%d)\n", (void *)client, client->number);
+  printf("[pappl] _papplClientRun: starting client thread for client=%p (number=%d)\n", (void *)client, client->number);
+  fflush(stdout);
 
   // Loop until we are out of requests or timeout (30 seconds)...
   for (;;)
   {
-    printk("[pappl] _papplClientRun: waiting for requests on client=%p (timeout 30s)\n", (void *)client);
+    printf("[pappl] _papplClientRun: waiting for requests on client=%p (timeout 30s)\n", (void *)client);
+    fflush(stdout);
     if (!httpWait(client->http, 30000))
     {
-      printk("[pappl] _papplClientRun: httpWait returned false (timeout/disconnect), exiting loop\n");
+      printf("[pappl] _papplClientRun: httpWait returned false (timeout/disconnect), exiting loop\n");
+      fflush(stdout);
       break;
     }
 
-    printk("[pappl] _papplClientRun: httpWait returned true (request data available), first_time=%d\n", first_time);
+    printf("[pappl] _papplClientRun: httpWait returned true (request data available), first_time=%d\n", first_time);
+    fflush(stdout);
 
     if (first_time && !(client->system->options & PAPPL_SOPTIONS_NO_TLS))
     {
@@ -691,19 +698,23 @@ _papplClientRun(
       first_time = 0;
     }
 
-    printk("[pappl] _papplClientRun: calling _papplClientProcessHTTP\n");
+    printf("[pappl] _papplClientRun: calling _papplClientProcessHTTP\n");
+    fflush(stdout);
     if (!_papplClientProcessHTTP(client))
     {
-      printk("[pappl] _papplClientRun: _papplClientProcessHTTP returned false, exiting loop\n");
+      printf("[pappl] _papplClientRun: _papplClientProcessHTTP returned false, exiting loop\n");
+      fflush(stdout);
       break;
     }
-    printk("[pappl] _papplClientRun: _papplClientProcessHTTP returned true, cleaning temp files\n");
+    printf("[pappl] _papplClientRun: _papplClientProcessHTTP returned true, cleaning temp files\n");
+    fflush(stdout);
 
     _papplClientCleanTempFiles(client);
   }
 
   // Close the connection to the client and return...
-  printk("[pappl] _papplClientRun: exiting thread, deleting client=%p\n", (void *)client);
+  printf("[pappl] _papplClientRun: exiting thread, deleting client=%p\n", (void *)client);
+  fflush(stdout);
   _papplClientDelete(client);
 
   return (NULL);

@@ -143,7 +143,8 @@ parse_dns_response(
   uint16_t aut_count = (packet[8] << 8) | packet[9];
   uint16_t add_count = (packet[10] << 8) | packet[11];
 
-  printk("parse_dns_response: flags=0x%04x, Q=%d, ANS=%d, AUTH=%d, ADD=%d\n", flags, q_count, ans_count, aut_count, add_count);
+  printf("parse_dns_response: flags=0x%04x, Q=%d, ANS=%d, AUTH=%d, ADD=%d\n", flags, q_count, ans_count, aut_count, add_count);
+  fflush(stdout);
 
   const uint8_t *reader = packet + 12;
   const uint8_t *packet_end = packet + packet_len;
@@ -204,14 +205,16 @@ parse_dns_response(
         }
         if (len == 15 && memcmp(temp + 1, "_pdl-datastream", 15) == 0)
         {
-          printk("parse_dns_response: found _pdl-datastream record, name='%s'\n", printer_name);
+          printf("parse_dns_response: found _pdl-datastream record, name='%s'\n", printer_name);
+          fflush(stdout);
           is_ipp = false;
           found_ptr = true;
           break;
         }
         if (len == 4 && memcmp(temp + 1, "_ipp", 4) == 0)
         {
-          printk("parse_dns_response: found _ipp record, name='%s'\n", printer_name);
+          printf("parse_dns_response: found _ipp record, name='%s'\n", printer_name);
+          fflush(stdout);
           is_ipp = true;
           port = 631;
           found_ptr = true;
@@ -225,7 +228,8 @@ parse_dns_response(
       if (rdlength >= 6)
       {
         port = (rdata[4] << 8) | rdata[5];
-        printk("parse_dns_response: found SRV record, target port=%d\n", port);
+        printf("parse_dns_response: found SRV record, target port=%d\n", port);
+        fflush(stdout);
       }
     }
   }
@@ -239,12 +243,14 @@ parse_dns_response(
     else
       snprintf(printer_uri, sizeof(printer_uri), "socket://%s:%d", ip_str, port);
 
-    printk("parse_dns_response: reporting discovered printer '%s' at URI '%s'\n", printer_name, printer_uri);
+    printf("parse_dns_response: reporting discovered printer '%s' at URI '%s'\n", printer_name, printer_uri);
+    fflush(stdout);
 
     // cb returns false to continue, true to stop (as per std callback rules)
     if (!(*cb)(printer_name, printer_uri, NULL, data))
     {
-      printk("parse_dns_response: callback returned false (requesting stop)\n");
+      printf("parse_dns_response: callback returned false (requesting stop)\n");
+      fflush(stdout);
       return (true); // Stop requested
     }
   }
@@ -265,12 +271,14 @@ pappl_socket_list(
   (void)err_cb;
   (void)err_data;
 
-  printk("pappl_socket_list: starting mDNS discovery scan...\n");
+  printf("pappl_socket_list: starting mDNS discovery scan...\n");
+  fflush(stdout);
 
   uint8_t *buffer = malloc(1024);
   if (!buffer)
   {
-    printk("pappl_socket_list: failed to allocate 1024 bytes buffer\n");
+    printf("pappl_socket_list: failed to allocate 1024 bytes buffer\n");
+    fflush(stdout);
     return (false);
   }
 
@@ -296,16 +304,21 @@ pappl_socket_list(
   int fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
   if (fd < 0)
   {
-    printk("pappl_socket_list: failed to create UDP socket (errno=%d)\n", errno);
+    printf("pappl_socket_list: failed to create UDP socket (errno=%d)\n", errno);
+    fflush(stdout);
     free(buffer);
     return (false);
   }
 
   int opt = 1;
-  if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0)
-    printk("pappl_socket_list: setsockopt(SO_REUSEADDR) failed (errno=%d)\n", errno);
-  if (setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &opt, sizeof(opt)) < 0)
-    printk("pappl_socket_list: setsockopt(SO_REUSEPORT) failed (errno=%d)\n", errno);
+  if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
+    printf("pappl_socket_list: setsockopt(SO_REUSEADDR) failed (errno=%d)\n", errno);
+    fflush(stdout);
+  }
+  if (setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &opt, sizeof(opt)) < 0) {
+    printf("pappl_socket_list: setsockopt(SO_REUSEPORT) failed (errno=%d)\n", errno);
+    fflush(stdout);
+  }
 
   // Bind to a random port to avoid port-sharing conflicts with native mDNS responder
   struct sockaddr_in local_addr;
@@ -316,7 +329,8 @@ pappl_socket_list(
 
   if (bind(fd, (struct sockaddr *)&local_addr, sizeof(local_addr)) < 0)
   {
-    printk("pappl_socket_list: bind to random port failed (errno=%d)\n", errno);
+    printf("pappl_socket_list: bind to random port failed (errno=%d)\n", errno);
+    fflush(stdout);
     close(fd);
     free(buffer);
     return (false);
@@ -344,7 +358,8 @@ pappl_socket_list(
   {
     char ip_str[32];
     inet_ntop(AF_INET, &local_ip, ip_str, sizeof(ip_str));
-    printk("pappl_socket_list: sending queries on active IP %s...\n", ip_str);
+    printf("pappl_socket_list: sending queries on active IP %s...\n", ip_str);
+    fflush(stdout);
 
     // Route outgoing multicast packets on the same active interface
     struct ip_mreq mreq_if;
@@ -352,7 +367,8 @@ pappl_socket_list(
     mreq_if.imr_interface = local_ip;
     if (setsockopt(fd, IPPROTO_IP, IP_MULTICAST_IF, &mreq_if, sizeof(mreq_if)) < 0)
     {
-      printk("pappl_socket_list: setsockopt(IP_MULTICAST_IF) failed (errno=%d)\n", errno);
+      printf("pappl_socket_list: setsockopt(IP_MULTICAST_IF) failed (errno=%d)\n", errno);
+      fflush(stdout);
     }
   }
 
@@ -366,7 +382,8 @@ pappl_socket_list(
   // Send queries
   ssize_t s1 = sendto(fd, socket_query, sizeof(socket_query), 0, (struct sockaddr *)&mcast_addr, sizeof(mcast_addr));
   ssize_t s2 = sendto(fd, ipp_query, sizeof(ipp_query), 0, (struct sockaddr *)&mcast_addr, sizeof(mcast_addr));
-  printk("pappl_socket_list: sent queries (socket_sent=%d, ipp_sent=%d)\n", (int)s1, (int)s2);
+  printf("pappl_socket_list: sent queries (socket_sent=%d, ipp_sent=%d)\n", (int)s1, (int)s2);
+  fflush(stdout);
 
   // Poll for responses with a 1500ms timeout
   struct pollfd pfd;
@@ -380,7 +397,8 @@ pappl_socket_list(
   uint32_t discovered_ips[MAX_DISCOVERED_IPS];
   int num_discovered_ips = 0;
 
-  printk("pappl_socket_list: entering poll loop...\n");
+  printf("pappl_socket_list: entering poll loop...\n");
+  fflush(stdout);
 
   while (k_uptime_get() - start_time < 1500 && !callback_stopped)
   {
@@ -392,7 +410,8 @@ pappl_socket_list(
     int r = poll(&pfd, 1, remaining);
     if (r < 0)
     {
-      printk("pappl_socket_list: poll failed (errno=%d)\n", errno);
+      printf("pappl_socket_list: poll failed (errno=%d)\n", errno);
+      fflush(stdout);
       break;
     }
     else if (r == 0)
@@ -408,7 +427,8 @@ pappl_socket_list(
       {
         char ip_str[32];
         inet_ntop(AF_INET, &sender_addr.sin_addr, ip_str, sizeof(ip_str));
-        printk("pappl_socket_list: received %d bytes from %s:%d\n", (int)len, ip_str, ntohs(sender_addr.sin_port));
+        printf("pappl_socket_list: received %d bytes from %s:%d\n", (int)len, ip_str, ntohs(sender_addr.sin_port));
+        fflush(stdout);
 
         if (len > 12)
         {
@@ -440,7 +460,8 @@ pappl_socket_list(
     }
   }
 
-  printk("pappl_socket_list: scan finished, discovered %d unique hosts. callback_stopped=%d\n", num_discovered_ips, callback_stopped);
+  printf("pappl_socket_list: scan finished, discovered %d unique hosts. callback_stopped=%d\n", num_discovered_ips, callback_stopped);
+  fflush(stdout);
 
   close(fd);
   free(buffer);
