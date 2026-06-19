@@ -2324,7 +2324,7 @@ printer_device_cb(
 
   papplClientHTMLPrintf(devdata->client, "<option value=\"%s\"%s>%s (%s)</option>", device_uri, !strcmp(devdata->device_uri, device_uri) ? " selected" : "", device_info, device_uri);
 
-  return (true);
+  return (false);
 }
 
 

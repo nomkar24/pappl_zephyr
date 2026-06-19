@@ -165,6 +165,9 @@ parse_dns_response(
   bool found_ptr = false;
   uint16_t port = 9100;
   bool is_ipp = false;
+  struct in_addr resolved_ip;
+  bool has_resolved_ip = false;
+  memset(&resolved_ip, 0, sizeof(resolved_ip));
 
   for (int i = 0; i < total_records; i++)
   {
@@ -232,12 +235,28 @@ parse_dns_response(
         fflush(stdout);
       }
     }
+    else if (type == 1) // A record — authoritative IPv4 address
+    {
+      if (rdlength == 4 && !has_resolved_ip)
+      {
+        memcpy(&resolved_ip, rdata, 4);
+        has_resolved_ip = true;
+        char dbg_ip[32];
+        inet_ntop(AF_INET, &resolved_ip, dbg_ip, sizeof(dbg_ip));
+        printf("parse_dns_response: found A record, resolved IP=%s\n", dbg_ip);
+        fflush(stdout);
+      }
+    }
   }
 
   if (found_ptr && printer_name[0] != '\0')
   {
     char ip_str[32];
-    inet_ntop(AF_INET, &sender_addr->sin_addr, ip_str, sizeof(ip_str));
+    // Prefer the authoritative A record IP; fall back to the mDNS sender IP
+    if (has_resolved_ip)
+      inet_ntop(AF_INET, &resolved_ip, ip_str, sizeof(ip_str));
+    else
+      inet_ntop(AF_INET, &sender_addr->sin_addr, ip_str, sizeof(ip_str));
     if (is_ipp)
       snprintf(printer_uri, sizeof(printer_uri), "ipp://%s:%d/ipp/print", ip_str, port);
     else
@@ -547,6 +566,9 @@ pappl_socket_open(
 
   (void)job;
 
+  printf("[pappl] pappl_socket_open: opening URI '%s'\n", device_uri ? device_uri : "(null)");
+  fflush(stdout);
+
   // Allocate memory for the socket...
   if ((sock = (_pappl_socket_t *)calloc(1, sizeof(_pappl_socket_t))) == NULL)
   {
@@ -576,25 +598,37 @@ pappl_socket_open(
 
   // Lookup the address of the printer...
   snprintf(port_str, sizeof(port_str), "%d", sock->port);
+  printf("[pappl] pappl_socket_open: calling httpAddrGetList('%s', AF_UNSPEC, '%s')\n", sock->host, port_str);
+  fflush(stdout);
   if ((sock->list = httpAddrGetList(sock->host, AF_UNSPEC, port_str)) == NULL)
   {
+    printf("[pappl] pappl_socket_open: httpAddrGetList FAILED: %s\n", cupsGetErrorString());
+    fflush(stdout);
     papplDeviceError(device, "Unable to lookup '%s:%d': %s", sock->host, sock->port, cupsGetErrorString());
     free(sock->host);
     free(sock);
     return (false);
   }
+  printf("[pappl] pappl_socket_open: httpAddrGetList succeeded\n");
+  fflush(stdout);
 
   sock->fd   = -1;
+  printf("[pappl] pappl_socket_open: calling httpAddrConnect to %s:%d (timeout=30s)\n", sock->host, sock->port);
+  fflush(stdout);
   sock->addr = httpAddrConnect(sock->list, &sock->fd, 30000, NULL);
 
   if (sock->fd < 0)
   {
+    printf("[pappl] pappl_socket_open: httpAddrConnect FAILED: fd=%d, err=%s\n", sock->fd, cupsGetErrorString());
+    fflush(stdout);
     papplDeviceError(device, "Unable to connect to '%s:%d': %s", sock->host, sock->port, cupsGetErrorString());
     free(sock->host);
     httpAddrFreeList(sock->list);
     free(sock);
     return (false);
   }
+  printf("[pappl] pappl_socket_open: connected to %s:%d (fd=%d)\n", sock->host, sock->port, sock->fd);
+  fflush(stdout);
 
   sock->snmp_fd = -1; // SNMP is bypassed/disabled on Zephyr socket connections
 
