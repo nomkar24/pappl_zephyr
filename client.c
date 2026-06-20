@@ -207,13 +207,15 @@ _papplClientProcessHTTP(
   // Parse the request line...
   if (http_state == HTTP_STATE_ERROR)
   {
-    if (httpGetError(client->http) != EPIPE && httpGetError(client->http))
+    int err = httpGetError(client->http);
+
+    if (err != 0 && err != EPIPE && err != ECONNRESET)
     {
-      papplLogClient(client, PAPPL_LOGLEVEL_ERROR, "Bad request line (%s).", strerror(httpGetError(client->http)));
+      papplLogClient(client, PAPPL_LOGLEVEL_ERROR, "HTTP read request error: %s (errno=%d).", strerror(err), err);
     }
     else
     {
-      papplLogClient(client, PAPPL_LOGLEVEL_ERROR, "HTTP read request error (http_state == HTTP_STATE_ERROR, %s).", strerror(httpGetError(client->http)));
+      papplLogClient(client, PAPPL_LOGLEVEL_DEBUG, "HTTP connection closed (state == HTTP_STATE_ERROR, err=%d).", err);
     }
 
     return (false);
