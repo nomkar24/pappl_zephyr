@@ -2332,7 +2332,7 @@ printer_device_cb(
 // '_papplPrinterWebConnect()' - Show the printer connect page.
 //
 
-void
+bool
 _papplPrinterWebConnect(
     pappl_client_t  *client,		// I - Client
     pappl_printer_t *printer)		// I - Printer
@@ -2357,7 +2357,7 @@ _papplPrinterWebConnect(
 
 
   if (!papplClientHTMLAuthorize(client))
-    return;
+    return (false);
 
   if (printer->device_uri)
     cupsCopyString(device_uri, printer->device_uri, sizeof(device_uri));
@@ -2436,7 +2436,7 @@ _papplPrinterWebConnect(
 	// Redirect the client to the printer's status page...
 	papplClientRespondRedirect(client, HTTP_STATUS_FOUND, "/");
 	cupsFreeOptions((cups_len_t)num_form, form);
-	return;
+	return (true);
       }
     }
 
@@ -2484,4 +2484,6 @@ _papplPrinterWebConnect(
 			"       </div>\n", papplClientGetLocString(client, _PAPPL_LOC("Network Printer")), papplClientGetLocString(client, _PAPPL_LOC("Hostname/IP Address")), papplClientGetLocString(client, _PAPPL_LOC("IP address or hostname")), hostname_pattern, hostvalue, papplClientGetLocString(client, _PAPPL_LOC("Connect Printer")));
 
   papplClientHTMLPrinterFooter(client);
+
+  return (true);
 }

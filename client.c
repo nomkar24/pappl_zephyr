@@ -208,7 +208,13 @@ _papplClientProcessHTTP(
   if (http_state == HTTP_STATE_ERROR)
   {
     if (httpGetError(client->http) != EPIPE && httpGetError(client->http))
-      papplLogClient(client, PAPPL_LOGLEVEL_DEBUG, "Bad request line (%s).", strerror(httpGetError(client->http)));
+    {
+      papplLogClient(client, PAPPL_LOGLEVEL_ERROR, "Bad request line (%s).", strerror(httpGetError(client->http)));
+    }
+    else
+    {
+      papplLogClient(client, PAPPL_LOGLEVEL_ERROR, "HTTP read request error (http_state == HTTP_STATE_ERROR, %s).", strerror(httpGetError(client->http)));
+    }
 
     return (false);
   }
@@ -246,7 +252,7 @@ _papplClientProcessHTTP(
 
   if (http_status != HTTP_STATUS_OK)
   {
-    papplLogClient(client, PAPPL_LOGLEVEL_DEBUG, "http_status=%d", http_status);
+    papplLogClient(client, PAPPL_LOGLEVEL_ERROR, "HTTP update failed: status=%d (%s).", http_status, httpStatusString(http_status));
     papplClientRespond(client, HTTP_STATUS_BAD_REQUEST, NULL, NULL, 0, 0);
     return (false);
   }
@@ -262,6 +268,7 @@ _papplClientProcessHTTP(
       httpGetVersion(client->http) >= HTTP_VERSION_1_1)
   {
     // HTTP/1.1 and higher require the "Host:" field...
+    papplLogClient(client, PAPPL_LOGLEVEL_ERROR, "Missing Host header in HTTP/1.1+ request.");
     papplClientRespond(client, HTTP_STATUS_BAD_REQUEST, NULL, NULL, 0, 0);
     return (false);
   }
@@ -317,7 +324,10 @@ _papplClientProcessHTTP(
 #endif // CUPS_VERSION_MAJOR >= 3 || CUPS_VERSION_MINOR >= 5
 
       if (!papplClientRespond(client, HTTP_STATUS_SWITCHING_PROTOCOLS, NULL, NULL, 0, 0))
+      {
+        papplLogClient(client, PAPPL_LOGLEVEL_ERROR, "Failed to send Switching Protocols response.");
         return (false);
+      }
 
       papplLogClient(client, PAPPL_LOGLEVEL_INFO, "Upgrading to encrypted connection.");
 
@@ -334,7 +344,10 @@ _papplClientProcessHTTP(
 #endif // CUPS_VERSION_MAJOR >= 3 || CUPS_VERSION_MINOR >= 5
     }
     else if (!papplClientRespond(client, HTTP_STATUS_NOT_IMPLEMENTED, NULL, NULL, 0, 0))
+    {
+      papplLogClient(client, PAPPL_LOGLEVEL_ERROR, "Failed to send Not Implemented response for Upgrade.");
       return (false);
+    }
   }
 
   // Handle HTTP Expect...
@@ -344,13 +357,19 @@ _papplClientProcessHTTP(
     {
       // Send 100-continue header...
       if (!papplClientRespond(client, HTTP_STATUS_CONTINUE, NULL, NULL, 0, 0))
+      {
+        papplLogClient(client, PAPPL_LOGLEVEL_ERROR, "Failed to send Continue response.");
 	return (false);
+      }
     }
     else
     {
       // Send 417-expectation-failed header...
       if (!papplClientRespond(client, HTTP_STATUS_EXPECTATION_FAILED, NULL, NULL, 0, 0))
+      {
+        papplLogClient(client, PAPPL_LOGLEVEL_ERROR, "Failed to send Expectation Failed response.");
 	return (false);
+      }
     }
   }
 
@@ -359,20 +378,44 @@ _papplClientProcessHTTP(
   {
     case HTTP_STATE_OPTIONS :
         // Do OPTIONS command...
-	return (papplClientRespond(client, HTTP_STATUS_OK, NULL, NULL, 0, 0));
+	if (!papplClientRespond(client, HTTP_STATUS_OK, NULL, NULL, 0, 0))
+	{
+	  papplLogClient(client, PAPPL_LOGLEVEL_ERROR, "Failed to send OK response for OPTIONS.");
+	  return (false);
+	}
+	return (true);
 
     case HTTP_STATE_HEAD :
         // See if we have a matching resource to serve...
         if ((resource = _papplSystemFindResourceForPath(client->system, client->uri)) != NULL)
         {
           if (eval_if_modified(client, resource))
-	    return (papplClientRespond(client, HTTP_STATUS_OK, NULL, resource->format, resource->last_modified, 0));
+          {
+	    if (!papplClientRespond(client, HTTP_STATUS_OK, NULL, resource->format, resource->last_modified, 0))
+	    {
+	      papplLogClient(client, PAPPL_LOGLEVEL_ERROR, "Failed to send OK response for HEAD resource '%s'.", client->uri);
+	      return (false);
+	    }
+	    return (true);
+          }
           else
-            return (papplClientRespond(client, HTTP_STATUS_NOT_MODIFIED, NULL, NULL, resource->last_modified, 0));
+          {
+            if (!papplClientRespond(client, HTTP_STATUS_NOT_MODIFIED, NULL, NULL, resource->last_modified, 0))
+            {
+              papplLogClient(client, PAPPL_LOGLEVEL_ERROR, "Failed to send NOT_MODIFIED response for HEAD resource '%s'.", client->uri);
+              return (false);
+            }
+            return (true);
+          }
 	}
 
         // If we get here the resource wasn't found...
-	return (papplClientRespond(client, HTTP_STATUS_NOT_FOUND, NULL, NULL, 0, 0));
+	if (!papplClientRespond(client, HTTP_STATUS_NOT_FOUND, NULL, NULL, 0, 0))
+	{
+	  papplLogClient(client, PAPPL_LOGLEVEL_ERROR, "Failed to send NOT_FOUND response for HEAD resource '%s'.", client->uri);
+	  return (false);
+	}
+	return (true);
 
     case HTTP_STATE_GET :
         // See if we have a matching resource to serve...
@@ -380,12 +423,22 @@ _papplClientProcessHTTP(
         {
           if (!eval_if_modified(client, resource))
           {
-            return (papplClientRespond(client, HTTP_STATUS_NOT_MODIFIED, NULL, NULL, resource->last_modified, 0));
+            if (!papplClientRespond(client, HTTP_STATUS_NOT_MODIFIED, NULL, NULL, resource->last_modified, 0))
+            {
+              papplLogClient(client, PAPPL_LOGLEVEL_ERROR, "Failed to send NOT_MODIFIED response for GET resource '%s'.", client->uri);
+              return (false);
+            }
+            return (true);
           }
           else if (resource->cb)
           {
             // Send output of a callback...
-            return ((resource->cb)(client, resource->cbdata));
+            if (!(resource->cb)(client, resource->cbdata))
+            {
+              papplLogClient(client, PAPPL_LOGLEVEL_ERROR, "GET callback failed for resource '%s'.", client->uri);
+              return (false);
+            }
+            return (true);
 	  }
 	  else if (resource->filename)
 	  {
@@ -399,6 +452,7 @@ _papplClientProcessHTTP(
 	      if (!papplClientRespond(client, HTTP_STATUS_OK, NULL, resource->format, resource->last_modified, 0))
 	      {
 	        close(fd);
+	        papplLogClient(client, PAPPL_LOGLEVEL_ERROR, "Failed to send OK response for external resource file '%s'.", resource->filename);
 		return (false);
 	      }
 
@@ -416,7 +470,10 @@ _papplClientProcessHTTP(
 	  {
 	    // Send a static resource file...
 	    if (!papplClientRespond(client, HTTP_STATUS_OK, NULL, resource->format, resource->last_modified, resource->length))
+	    {
+	      papplLogClient(client, PAPPL_LOGLEVEL_ERROR, "Failed to send OK response for static resource '%s'.", client->uri);
 	      return (false);
+	    }
 
 	    httpWrite(client->http, (const char *)resource->data, resource->length);
 	    httpFlushWrite(client->http);
@@ -425,7 +482,12 @@ _papplClientProcessHTTP(
 	}
 
         // If we get here then the resource wasn't found...
-	return (papplClientRespond(client, HTTP_STATUS_NOT_FOUND, NULL, NULL, 0, 0));
+	if (!papplClientRespond(client, HTTP_STATUS_NOT_FOUND, NULL, NULL, 0, 0))
+	{
+	  papplLogClient(client, PAPPL_LOGLEVEL_ERROR, "Failed to send NOT_FOUND response for GET resource '%s'.", client->uri);
+	  return (false);
+	}
+	return (true);
 
     case HTTP_STATE_POST :
         if (!strcmp(httpGetField(client->http, HTTP_FIELD_CONTENT_TYPE), "application/ipp"))
@@ -444,7 +506,12 @@ _papplClientProcessHTTP(
 	  }
 
 	  // Now that we have the IPP request, process the request...
-	  return (_papplClientProcessIPP(client));
+	  if (!_papplClientProcessIPP(client))
+	  {
+	    papplLogClient(client, PAPPL_LOGLEVEL_ERROR, "Failed to process IPP request.");
+	    return (false);
+	  }
+	  return (true);
 	}
 	else if ((resource = _papplSystemFindResourceForPath(client->system, client->uri)) != NULL)
         {
@@ -452,18 +519,33 @@ _papplClientProcessHTTP(
           if (resource->cb)
           {
             // Handle a post request through the callback...
-            return ((resource->cb)(client, resource->cbdata));
+            if (!(resource->cb)(client, resource->cbdata))
+            {
+              papplLogClient(client, PAPPL_LOGLEVEL_ERROR, "POST callback failed for resource '%s'.", client->uri);
+              return (false);
+            }
+            return (true);
           }
           else
           {
             // Otherwise you can't POST to a resource...
-	    return (papplClientRespond(client, HTTP_STATUS_BAD_REQUEST, NULL, NULL, 0, 0));
+	    if (!papplClientRespond(client, HTTP_STATUS_BAD_REQUEST, NULL, NULL, 0, 0))
+	    {
+	      papplLogClient(client, PAPPL_LOGLEVEL_ERROR, "Failed to send BAD_REQUEST for POST to static resource '%s'.", client->uri);
+	      return (false);
+	    }
+	    return (true);
           }
         }
         else
         {
 	  // Not an IPP request or form, return an error...
-	  return (papplClientRespond(client, HTTP_STATUS_BAD_REQUEST, NULL, NULL, 0, 0));
+	  if (!papplClientRespond(client, HTTP_STATUS_BAD_REQUEST, NULL, NULL, 0, 0))
+	  {
+	    papplLogClient(client, PAPPL_LOGLEVEL_ERROR, "Failed to send BAD_REQUEST for unknown POST.");
+	    return (false);
+	  }
+	  return (true);
 	}
 
     default :

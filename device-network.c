@@ -123,13 +123,15 @@ get_first_label(
 }
 
 // Helper to parse incoming mDNS response packet. Returns true if callback says to stop.
+// Sets *found_ipp_out to true if an _ipp record was matched (false for _pdl-datastream).
 static bool
 parse_dns_response(
     const uint8_t            *packet,
     size_t                   packet_len,
     const struct sockaddr_in *sender_addr,
     pappl_device_cb_t        cb,
-    void                     *data)
+    void                     *data,
+    bool                     *found_ipp_out)
 {
   if (packet_len < 12)
     return (false);
@@ -206,14 +208,7 @@ parse_dns_response(
           hops++;
           continue;
         }
-        if (len == 15 && memcmp(temp + 1, "_pdl-datastream", 15) == 0)
-        {
-          printf("parse_dns_response: found _pdl-datastream record, name='%s'\n", printer_name);
-          fflush(stdout);
-          is_ipp = false;
-          found_ptr = true;
-          break;
-        }
+        // Check _ipp first — preferred over _pdl-datastream (works without HP app)
         if (len == 4 && memcmp(temp + 1, "_ipp", 4) == 0)
         {
           printf("parse_dns_response: found _ipp record, name='%s'\n", printer_name);
@@ -221,6 +216,18 @@ parse_dns_response(
           is_ipp = true;
           port = 631;
           found_ptr = true;
+          break;
+        }
+        if (len == 15 && memcmp(temp + 1, "_pdl-datastream", 15) == 0)
+        {
+          printf("parse_dns_response: found _pdl-datastream record, name='%s'\n", printer_name);
+          fflush(stdout);
+          // Only fall back to PDL if we haven't already matched _ipp
+          if (!is_ipp)
+          {
+            is_ipp = false;
+            found_ptr = true;
+          }
           break;
         }
         temp += 1 + len;
@@ -261,6 +268,9 @@ parse_dns_response(
       snprintf(printer_uri, sizeof(printer_uri), "ipp://%s:%d/ipp/print", ip_str, port);
     else
       snprintf(printer_uri, sizeof(printer_uri), "socket://%s:%d", ip_str, port);
+
+    if (found_ipp_out)
+      *found_ipp_out = is_ipp;
 
     printf("parse_dns_response: reporting discovered printer '%s' at URI '%s'\n", printer_name, printer_uri);
     fflush(stdout);
@@ -412,8 +422,12 @@ pappl_socket_list(
   int64_t start_time = k_uptime_get();
   bool callback_stopped = false;
 
+  // Track per-IP discovery state:
+  //   ipp_confirmed[k]=true  → IPP found for this IP, fully deduped
+  //   ipp_confirmed[k]=false → only PDL found so far, still allow _ipp upgrade
 #define MAX_DISCOVERED_IPS 32
   uint32_t discovered_ips[MAX_DISCOVERED_IPS];
+  bool     ipp_confirmed[MAX_DISCOVERED_IPS];
   int num_discovered_ips = 0;
 
   printf("pappl_socket_list: entering poll loop...\n");
@@ -452,26 +466,43 @@ pappl_socket_list(
         if (len > 12)
         {
           uint32_t ip_val = sender_addr.sin_addr.s_addr;
-          bool duplicate = false;
+
+          // Find existing entry for this IP (if any)
+          int existing_idx = -1;
           for (int k = 0; k < num_discovered_ips; k++)
           {
             if (discovered_ips[k] == ip_val)
             {
-              duplicate = true;
+              existing_idx = k;
               break;
             }
           }
 
-          if (!duplicate)
+          // Skip entirely only if we already confirmed IPP for this IP.
+          // If only PDL was confirmed, allow re-processing — an _ipp packet
+          // from the same IP upgrades the result.
+          bool skip = (existing_idx >= 0 && ipp_confirmed[existing_idx]);
+
+          if (!skip)
           {
-            if (parse_dns_response(buffer, len, &sender_addr, cb, data))
+            bool found_ipp = false;
+            if (parse_dns_response(buffer, len, &sender_addr, cb, data, &found_ipp))
             {
               callback_stopped = true;
               break;
             }
-            if (num_discovered_ips < MAX_DISCOVERED_IPS)
+
+            if (existing_idx >= 0)
             {
-              discovered_ips[num_discovered_ips++] = ip_val;
+              // Upgrade: mark IPP confirmed if this packet was IPP
+              if (found_ipp)
+                ipp_confirmed[existing_idx] = true;
+            }
+            else if (num_discovered_ips < MAX_DISCOVERED_IPS)
+            {
+              discovered_ips[num_discovered_ips]   = ip_val;
+              ipp_confirmed[num_discovered_ips]     = found_ipp;
+              num_discovered_ips++;
             }
           }
         }
