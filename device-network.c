@@ -276,9 +276,9 @@ parse_dns_response(
     fflush(stdout);
 
     // cb returns false to continue, true to stop (as per std callback rules)
-    if (!(*cb)(printer_name, printer_uri, NULL, data))
+    if ((*cb)(printer_name, printer_uri, NULL, data))
     {
-      printf("parse_dns_response: callback returned false (requesting stop)\n");
+      printf("parse_dns_response: callback returned true (requesting stop)\n");
       fflush(stdout);
       return (true); // Stop requested
     }
