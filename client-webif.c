@@ -11,6 +11,27 @@
 #include "pappl-private.h"
 #include <math.h>
 
+#ifdef CONFIG_CUPS_USE_EXTERNAL_HEAP
+#  include <zephyr/multi_heap/shared_multi_heap.h>
+#  define WEB_MALLOC(s)      shared_multi_heap_alloc(SMH_REG_ATTR_EXTERNAL, s)
+#  define WEB_REALLOC(p, s)  shared_multi_heap_realloc(SMH_REG_ATTR_EXTERNAL, p, s)
+#  define WEB_FREE(p)        shared_multi_heap_free(p)
+static char *web_strdup(const char *s)
+{
+  size_t len = strlen(s) + 1;
+  char *copy = shared_multi_heap_alloc(SMH_REG_ATTR_EXTERNAL, len);
+  if (copy)
+    memcpy(copy, s, len);
+  return copy;
+}
+#  define WEB_STRDUP(s)      web_strdup(s)
+#else
+#  define WEB_MALLOC(s)      malloc(s)
+#  define WEB_REALLOC(p, s)  realloc(p, s)
+#  define WEB_FREE(p)        free(p)
+#  define WEB_STRDUP(s)      strdup(s)
+#endif
+
 
 //
 // 'papplClientGetCookie()' - Get a cookie from the client.
@@ -163,7 +184,7 @@ papplClientGetForm(
       return (0);
     }
 
-    if ((body = strdup(client->options)) == NULL)
+    if ((body = WEB_STRDUP(client->options)) == NULL)
     {
       papplLogClient(client, PAPPL_LOGLEVEL_ERROR, "Unable to allocate memory for form data.");
       *form = NULL;
@@ -180,7 +201,7 @@ papplClientGetForm(
     initial_state = httpGetState(client->http);
     body_alloc    = 65536;
 
-    if ((body = malloc(body_alloc)) == NULL)
+    if ((body = WEB_MALLOC(body_alloc)) == NULL)
     {
       papplLogClient(client, PAPPL_LOGLEVEL_ERROR, "Unable to allocate memory for form data.");
       *form = NULL;
@@ -202,10 +223,10 @@ papplClientGetForm(
         body_alloc += 65536;
         temp_offset = (size_t)(bodyptr - body);
 
-        if ((temp = realloc(body, body_alloc)) == NULL)
+        if ((temp = WEB_REALLOC(body, body_alloc)) == NULL)
         {
 	  papplLogClient(client, PAPPL_LOGLEVEL_ERROR, "Unable to allocate memory for form data.");
-          free(body);
+          WEB_FREE(body);
 	  *form = NULL;
 	  return (0);
         }
@@ -412,7 +433,7 @@ papplClientGetForm(
     }
   }
 
-  free(body);
+  WEB_FREE(body);
 
   // Return whatever we got...
   return (num_form);

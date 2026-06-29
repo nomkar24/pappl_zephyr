@@ -30,7 +30,7 @@ static char	*time_string(pappl_client_t *client, time_t tv, char *buffer, size_t
 // '_papplPrinterWebCancelAllJobs()' - Cancel all printer jobs.
 //
 
-void
+bool
 _papplPrinterWebCancelAllJobs(
     pappl_client_t  *client,		// I - Client
     pappl_printer_t *printer)		// I - Printer
@@ -39,7 +39,7 @@ _papplPrinterWebCancelAllJobs(
 
 
   if (!papplClientHTMLAuthorize(client))
-    return;
+    return (false);
 
   if (client->operation == HTTP_STATE_POST)
   {
@@ -62,7 +62,7 @@ _papplPrinterWebCancelAllJobs(
       snprintf(path, sizeof(path), "%s/jobs", printer->uriname);
       papplClientRespondRedirect(client, HTTP_STATUS_FOUND, path);
       cupsFreeOptions((cups_len_t)num_form, form);
-      return;
+      return (true);
     }
 
     cupsFreeOptions((cups_len_t)num_form, form);
@@ -95,6 +95,7 @@ _papplPrinterWebCancelAllJobs(
     papplClientHTMLPrintf(client, "        <p>%s</p>\n", papplClientGetLocString(client, _PAPPL_LOC("No jobs in history.")));
 
   papplClientHTMLFooter(client);
+  return (true);
 }
 
 
@@ -102,7 +103,7 @@ _papplPrinterWebCancelAllJobs(
 // '_papplPrinterWebConfig()' - Show the printer configuration web page.
 //
 
-void
+bool
 _papplPrinterWebConfig(
     pappl_client_t  *client,		// I - Client
     pappl_printer_t *printer)		// I - Printer
@@ -117,7 +118,7 @@ _papplPrinterWebConfig(
 
 
   if (!papplClientHTMLAuthorize(client))
-    return;
+    return (false);
 
   if (client->operation == HTTP_STATE_POST)
   {
@@ -149,6 +150,7 @@ _papplPrinterWebConfig(
   _papplClientHTMLInfo(client, true, papplPrinterGetDNSSDName(printer, dns_sd_name, sizeof(dns_sd_name)), papplPrinterGetLocation(printer, location, sizeof(location)), papplPrinterGetGeoLocation(printer, geo_location, sizeof(geo_location)), papplPrinterGetOrganization(printer, organization, sizeof(organization)), papplPrinterGetOrganizationalUnit(printer, org_unit, sizeof(org_unit)), papplPrinterGetContact(printer, &contact));
 
   papplClientHTMLPrinterFooter(client);
+  return (true);
 }
 
 
@@ -222,7 +224,7 @@ _papplPrinterWebConfigFinalize(
 // '_papplPrinterWebDefaults()' - Show the printer defaults web page.
 //
 
-void
+bool
 _papplPrinterWebDefaults(
     pappl_client_t  *client,		// I - Client
     pappl_printer_t *printer)		// I - Printer
@@ -253,7 +255,7 @@ _papplPrinterWebDefaults(
 
 
   if (!papplClientHTMLAuthorize(client))
-    return;
+    return (false);
 
   papplPrinterGetDriverData(printer, &data);
 
@@ -649,6 +651,7 @@ _papplPrinterWebDefaults(
                         "        </form>\n", papplClientGetLocString(client, _PAPPL_LOC("Save Changes")));
 
   papplClientHTMLPrinterFooter(client);
+  return (true);
 }
 
 
@@ -656,7 +659,7 @@ _papplPrinterWebDefaults(
 // '_papplPrinterWebDelete()' - Show the printer delete confirmation web page.
 //
 
-void
+bool
 _papplPrinterWebDelete(
     pappl_client_t  *client,		// I - Client
     pappl_printer_t *printer)		// I - Printer
@@ -665,7 +668,7 @@ _papplPrinterWebDelete(
 
 
   if (!papplClientHTMLAuthorize(client))
-    return;
+    return (false);
 
   if (client->operation == HTTP_STATE_POST)
   {
@@ -695,7 +698,7 @@ _papplPrinterWebDelete(
 
       papplClientRespondRedirect(client, HTTP_STATUS_FOUND, "/");
       cupsFreeOptions((cups_len_t)num_form, form);
-      return;
+      return (true);
     }
 
     cupsFreeOptions((cups_len_t)num_form, form);
@@ -710,6 +713,7 @@ _papplPrinterWebDelete(
   papplClientHTMLPrintf(client,"          <input type=\"submit\" value=\"%s\"></form>", papplClientGetLocString(client, _PAPPL_LOC("Confirm Delete Printer")));
 
   papplClientHTMLFooter(client);
+  return (true);
 }
 
 
@@ -717,7 +721,7 @@ _papplPrinterWebDelete(
 // '_papplPrinterWebHome()' - Show the printer home page.
 //
 
-void
+bool
 _papplPrinterWebHome(
     pappl_client_t  *client,		// I - Client
     pappl_printer_t *printer)		// I - Printer
@@ -912,6 +916,7 @@ _papplPrinterWebHome(
   }
 
   papplClientHTMLPrinterFooter(client);
+  return (true);
 }
 
 
@@ -919,7 +924,7 @@ _papplPrinterWebHome(
 // '_papplPrinterWebInfra()' - Show the cloud (INFRA/proxy) state/controls.
 //
 
-void
+bool
 _papplPrinterWebInfra(
     pappl_client_t  *client,		// I - Client
     pappl_printer_t *printer)		// I - Printer
@@ -928,7 +933,7 @@ _papplPrinterWebInfra(
 
 
   if (!papplClientHTMLAuthorize(client))
-    return;
+    return (false);
 
   if (client->operation == HTTP_STATE_POST)
   {
@@ -1001,6 +1006,7 @@ _papplPrinterWebInfra(
   // Show cloud printing status...
 
   infra_status(client, printer, status, /*full_page*/true);
+  return (true);
 }
 
 
@@ -1113,7 +1119,7 @@ _papplPrinterWebIteratorCallback(
 // '_papplPrinterWebJobs()' - Show the printer jobs web page.
 //
 
-void
+bool
 _papplPrinterWebJobs(
     pappl_client_t  *client,		// I - Client
     pappl_printer_t *printer)		// I - Printer
@@ -1125,7 +1131,7 @@ _papplPrinterWebJobs(
   bool		refresh;		// Refresh the window?
 
   if (!papplClientHTMLAuthorize(client))
-    return;
+    return (false);
 
   printer_state = papplPrinterGetState(printer);
   refresh       = printer_state == IPP_PSTATE_PROCESSING;
@@ -1318,6 +1324,7 @@ _papplPrinterWebJobs(
     papplClientHTMLPrintf(client, "        <p>%s</p>\n", papplClientGetLocString(client, _PAPPL_LOC("No jobs in history.")));
 
   papplClientHTMLPrinterFooter(client);
+  return (true);
 }
 
 
@@ -1325,7 +1332,7 @@ _papplPrinterWebJobs(
 // '_papplPrinterWebMedia()' - Show the printer media web page.
 //
 
-void
+bool
 _papplPrinterWebMedia(
     pappl_client_t  *client,		// I - Client
     pappl_printer_t *printer)		// I - Printer
@@ -1338,7 +1345,7 @@ _papplPrinterWebMedia(
 
 
   if (!papplClientHTMLAuthorize(client))
-    return;
+    return (false);
 
   papplPrinterGetDriverData(printer, &data);
 
@@ -1484,6 +1491,7 @@ _papplPrinterWebMedia(
 		        "}</script>\n", papplClientGetLocString(client, _PAPPL_LOC("Save Changes")));
 
   papplClientHTMLPrinterFooter(client);
+  return (true);
 }
 
 
@@ -1491,7 +1499,7 @@ _papplPrinterWebMedia(
 // '_papplPrinterWebSupplies()' - Show the printer supplies web page.
 //
 
-void
+bool
 _papplPrinterWebSupplies(
     pappl_client_t  *client,		// I - Client
     pappl_printer_t *printer)		// I - Printer
@@ -1547,6 +1555,7 @@ _papplPrinterWebSupplies(
                       "          </table>\n");
 
   papplClientHTMLPrinterFooter(client);
+  return (true);
 }
 
 

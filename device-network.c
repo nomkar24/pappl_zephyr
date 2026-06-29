@@ -265,7 +265,7 @@ parse_dns_response(
     else
       inet_ntop(AF_INET, &sender_addr->sin_addr, ip_str, sizeof(ip_str));
     if (is_ipp)
-      snprintf(printer_uri, sizeof(printer_uri), "ipp://%s:%d/ipp/print", ip_str, port);
+      snprintf(printer_uri, sizeof(printer_uri), "socket://%s:9100", ip_str);
     else
       snprintf(printer_uri, sizeof(printer_uri), "socket://%s:%d", ip_str, port);
 

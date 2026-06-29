@@ -324,7 +324,7 @@ static const char * const countries[][2] =
 // '_papplSystemAddPrinter()' - Add a printer
 //
 
-void
+bool
 _papplSystemWebAddPrinter(
     pappl_client_t *client,
     pappl_system_t *system)
@@ -354,7 +354,7 @@ _papplSystemWebAddPrinter(
 
 
   if (!papplClientHTMLAuthorize(client))
-    return;
+    return (false);
 
   if (client->operation == HTTP_STATE_POST)
   {
@@ -455,7 +455,7 @@ _papplSystemWebAddPrinter(
 	  // Redirect the client to the printer's status page...
           papplClientRespondRedirect(client, HTTP_STATUS_FOUND, printer->uriname);
           cupsFreeOptions((cups_len_t)num_form, form);
-          return;
+          return (true);
 	}
 
         switch (errno)
@@ -533,6 +533,7 @@ _papplSystemWebAddPrinter(
 		        "       </div>\n", papplClientGetLocString(client, _PAPPL_LOC("Add Printer")));
 
   system_footer(client);
+  return (true);
 }
 
 
@@ -540,7 +541,7 @@ _papplSystemWebAddPrinter(
 // '_papplSystemWebConfig()' - Show the system configuration page.
 //
 
-void
+bool
 _papplSystemWebConfig(
     pappl_client_t *client,		// I - Client
     pappl_system_t *system)		// I - System
@@ -555,7 +556,7 @@ _papplSystemWebConfig(
 
 
   if (!papplClientHTMLAuthorize(client))
-    return;
+    return (false);
 
   if (client->operation == HTTP_STATE_POST)
   {
@@ -587,6 +588,7 @@ _papplSystemWebConfig(
                       "      </div>\n");
 
   system_footer(client);
+  return (true);
 }
 
 
@@ -660,7 +662,7 @@ _papplSystemWebConfigFinalize(
 // '_papplSystemWebHome()' - Show the system home page.
 //
 
-void
+bool
 _papplSystemWebHome(
     pappl_client_t *client,		// I - Client
     pappl_system_t *system)		// I - System
@@ -700,6 +702,7 @@ _papplSystemWebHome(
                       "      </div>\n");
 
   system_footer(client);
+  return (true);
 }
 
 
@@ -937,7 +940,7 @@ _papplSystemWebLogs(
 // '_papplSystemWebNetwork()' - Show the system network configuration page.
 //
 
-void
+bool
 _papplSystemWebNetwork(
     pappl_client_t *client,		// I - Client
     pappl_system_t *system)		// I - System
@@ -953,7 +956,7 @@ _papplSystemWebNetwork(
 
 
   if (!papplClientHTMLAuthorize(client))
-    return;
+    return (false);
 
   if (client->system->network_get_cb)
     num_networks = (client->system->network_get_cb)(client->system, client->system->network_cbdata, sizeof(networks) / sizeof(networks[0]), networks);
@@ -1117,7 +1120,7 @@ _papplSystemWebNetwork(
 
         system_redirect(client, _PAPPL_LOC("Updating Network Configuration"), "/network", 10, (pappl_timer_cb_t)system_redirect_network_cb, &data);
         cupsFreeOptions((cups_len_t)num_form, form);
-        return;
+        return (true);
       }
 
       if (!status)
@@ -1314,6 +1317,7 @@ _papplSystemWebNetwork(
   papplClientHTMLPuts(client, "      </div>\n");
 
   system_footer(client);
+  return (true);
 }
 
 
@@ -1321,7 +1325,7 @@ _papplSystemWebNetwork(
 // '_papplSystemWebSecurity()' - Show the system security (users/password) page.
 //
 
-void
+bool
 _papplSystemWebSecurity(
     pappl_client_t *client,		// I - Client
     pappl_system_t *system)		// I - System
@@ -1333,7 +1337,7 @@ _papplSystemWebSecurity(
 
 
   if (!papplClientHTMLAuthorize(client))
-    return;
+    return (false);
 
   if (client->operation == HTTP_STATE_POST)
   {
@@ -1535,6 +1539,8 @@ _papplSystemWebSecurity(
                       "      </div>\n");
 
   system_footer(client);
+
+  return (true);
 }
 
 
@@ -1861,7 +1867,7 @@ _papplSystemWebTLSNew(
 // '_papplSystemWebWiFi()' - Show the Wi-Fi network UI.
 //
 
-void
+bool
 _papplSystemWebWiFi(
     pappl_client_t *client,		// I - Client
     pappl_system_t *system)		// I - System
@@ -1873,7 +1879,7 @@ _papplSystemWebWiFi(
 
 
   if (!papplClientHTMLAuthorize(client))
-    return;
+    return (false);
 
   if (client->operation == HTTP_STATE_POST)
   {
@@ -1905,7 +1911,7 @@ _papplSystemWebWiFi(
 
 	system_redirect(client, _PAPPL_LOC("Joining Wi-Fi Network"), "/network", 30, (pappl_timer_cb_t)system_redirect_wifi_cb, &data);
 	cupsFreeOptions((cups_len_t)num_form, form);
-	return;
+	return (true);
       }
 
       status = _PAPPL_LOC("Missing network name.");
@@ -1966,6 +1972,8 @@ _papplSystemWebWiFi(
 			"      </div>\n", papplClientGetLocString(client, _PAPPL_LOC("Hidden SSID")), papplClientGetLocString(client, _PAPPL_LOC("Rescan")), papplClientGetLocString(client, _PAPPL_LOC("Password")), papplClientGetLocString(client, _PAPPL_LOC("Join Wi-Fi Network")));
 
   system_footer(client);
+
+  return (true);
 }
 
 

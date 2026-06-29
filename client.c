@@ -739,12 +739,12 @@ _papplClientRun(
   printf("[pappl] _papplClientRun: starting client thread for client=%p (number=%d)\n", (void *)client, client->number);
   fflush(stdout);
 
-  // Loop until we are out of requests or timeout (30 seconds)...
+  // Loop until we are out of requests or timeout (5 seconds)...
   for (;;)
   {
-    printf("[pappl] _papplClientRun: waiting for requests on client=%p (timeout 30s)\n", (void *)client);
+    printf("[pappl] _papplClientRun: waiting for requests on client=%p (timeout 5s)\n", (void *)client);
     fflush(stdout);
-    if (!httpWait(client->http, 30000))
+    if (!httpWait(client->http, 5000))
     {
       printf("[pappl] _papplClientRun: httpWait returned false (timeout/disconnect), exiting loop\n");
       fflush(stdout);
